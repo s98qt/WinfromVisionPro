@@ -14,13 +14,14 @@ using Cognex.VisionPro.Display;
 
 namespace Audio900
 {
-    public partial class Form1 : Form
+    public partial class MainForm : Form
     {
         // 服务实例
         private CameraService _cameraService;
         private MultiCameraManager _multiCameraManager;
         private TemplateStorageService _templateStorageService;
         private VideoRecordingService _videoRecordingService;
+        private WorkflowService _workflowService;
         
         // 当前模板和步骤
         private WorkTemplate _currentTemplate;
@@ -29,7 +30,7 @@ namespace Audio900
         // 状态标志
         private bool _isWorkflowRunning = false;
 
-        public Form1()
+        public MainForm()
         {
             InitializeComponent();
             
@@ -52,6 +53,9 @@ namespace Audio900
                 // 初始化相机
                 await InitializeCameras();
                 
+                // 初始化工作流服务
+                InitializeWorkflow();
+
                 UpdateStatus("初始化完成");
             }
             catch (Exception ex)
@@ -243,6 +247,89 @@ namespace Audio900
         }
 
         /// <summary>
+        /// 初始化工作流服务
+        /// </summary>
+        private void InitializeWorkflow()
+        {
+            _workflowService = new WorkflowService(_cameraService);
+            _workflowService.StatusMessageChanged += OnWorkflowStatusMessageChanged;
+            _workflowService.StateChanged += OnWorkflowStateChanged;
+            _workflowService.OverallResultChanged += OnWorkflowOverallResultChanged;
+            _workflowService.OnStepCompleted += OnWorkflowStepCompleted;
+            _workflowService.RecordingStatusChanged += OnWorkflowRecordingStatusChanged;
+            
+            // 设置初始相机连接状态
+            _workflowService.SetCameraConnectionStatus(_cameraService != null);
+        }
+
+        private void OnWorkflowStatusMessageChanged(object sender, string message)
+        {
+            UpdateStatus(message);
+        }
+
+        private void OnWorkflowStateChanged(object sender, WorkflowService.WorkflowState state)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action<object, WorkflowService.WorkflowState>(OnWorkflowStateChanged), sender, state);
+                return;
+            }
+            
+            // 根据状态更新UI
+            lblMesStatus.Text = $"状态: {state}";
+        }
+
+        private void OnWorkflowOverallResultChanged(string result)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action<string>(OnWorkflowOverallResultChanged), result);
+                return;
+            }
+            
+            lblResult.Text = result;
+            if (result == "PASS")
+            {
+                lblResult.BackColor = Color.FromArgb(76, 175, 80); // Green
+            }
+            else if (result == "FAIL")
+            {
+                lblResult.BackColor = Color.Red;
+            }
+            else
+            {
+                lblResult.BackColor = Color.Gray;
+            }
+        }
+
+        private void OnWorkflowStepCompleted(WorkStep step)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action<WorkStep>(OnWorkflowStepCompleted), step);
+                return;
+            }
+            
+            // 更新步骤图片显示
+            lblStepTitle.Text = $"步骤 {step.StepNumber}\r\n{step.Name}";
+            if (step.ImageSource != null)
+            {
+                pictureBoxStep.Image = step.ImageSource;
+            }
+        }
+        
+        private void OnWorkflowRecordingStatusChanged(string status, Color color)
+        {
+             if (InvokeRequired)
+            {
+                Invoke(new Action<string, Color>(OnWorkflowRecordingStatusChanged), status, color);
+                return;
+            }
+            // 显示录制状态
+            UpdateStatus(status);
+        }
+
+        /// <summary>
         /// 打开相机按钮点击
         /// </summary>
         private void btnOpenCamera_Click(object sender, EventArgs e)
@@ -284,42 +371,20 @@ namespace Audio900
                 btnStart.Enabled = false;
                 btnStop.Enabled = true;
                 cmbTemplates.Enabled = false;
-                lblResult.Text = "检测中...";
-                lblResult.ForeColor = Color.Blue;
                 
-                // 设置参数
-                Params_OUMIT_.Params.Instance.SN = txtProductSN.Text;
-                // Params_OUMIT_.Params.Instance.EmployeeID = txtEmployeeId.Text; // TODO: 添加EmployeeID属性到Params类
-                
-                UpdateStatus($"开始检测产品: {txtProductSN.Text}");
-                LoggerService.Info($"开始检测 - SN: {txtProductSN.Text}, 模板: {_currentTemplate.Name}");
-                
-                // 启动视频录制
-                _videoRecordingService.StartRecording(txtProductSN.Text, _currentTemplate.Name);
-                
-                // TODO: 实现工作流逻辑
-                await Task.Delay(2000); // 模拟检测过程
-                
-                // 模拟检测结果
-                lblResult.Text = "PASS";
-                lblResult.ForeColor = Color.Green;
-                
-                UpdateStatus("检测完成");
-                LoggerService.Info("检测完成");
-                
-                // 停止视频录制
-                _videoRecordingService.StopRecording();
+                // 启动工作流
+                // 注意：StartWorkflow 内部是异步的，但为了不阻塞 UI 线程，我们可以包装一下
+                // 不过 StartWorkflow 本身是 async Task，直接 await 即可
+                await _workflowService.StartWorkflow(
+                    _currentTemplate, 
+                    txtProductSN.Text, 
+                    txtEmployeeId.Text);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"检测过程出错: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                LoggerService.Error(ex, "检测过程出错");
+                MessageBox.Show($"启动检测失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                LoggerService.Error(ex, "启动检测失败");
                 
-                lblResult.Text = "ERROR";
-                lblResult.ForeColor = Color.Red;
-            }
-            finally
-            {
                 // 恢复UI状态
                 _isWorkflowRunning = false;
                 btnStart.Enabled = true;
@@ -331,18 +396,17 @@ namespace Audio900
         /// <summary>
         /// 停止检测按钮点击
         /// </summary>
-        private void btnStop_Click(object sender, EventArgs e)
+        private async void btnStop_Click(object sender, EventArgs e)
         {
             try
             {
+                await _workflowService.StopWorkflow();
+                
+                // 恢复UI状态
                 _isWorkflowRunning = false;
-                _videoRecordingService.StopRecording();
-                
-                UpdateStatus("已停止检测");
-                LoggerService.Info("用户停止检测");
-                
-                lblResult.Text = "已停止";
-                lblResult.ForeColor = Color.Gray;
+                btnStart.Enabled = true;
+                btnStop.Enabled = false;
+                cmbTemplates.Enabled = true;
             }
             catch (Exception ex)
             {

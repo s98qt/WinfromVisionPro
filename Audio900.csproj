@@ -127,11 +127,11 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Form1.cs">
+    <Compile Include="MainForm.cs">
       <SubType>Form</SubType>
     </Compile>
-    <Compile Include="Form1.Designer.cs">
-      <DependentUpon>Form1.cs</DependentUpon>
+    <Compile Include="MainForm.Designer.cs">
+      <DependentUpon>MainForm.cs</DependentUpon>
     </Compile>
     <Compile Include="Models\ShapeModel.cs" />
     <Compile Include="Models\WorkStep.cs" />
@@ -153,8 +153,16 @@
     <Compile Include="Services\StructsBody.cs" />
     <Compile Include="Services\TemplateStorageService.cs" />
     <Compile Include="Services\VideoRecordingService.cs" />
-    <EmbeddedResource Include="Form1.resx">
-      <DependentUpon>Form1.cs</DependentUpon>
+    <Compile Include="Services\WorkflowService.cs" />
+    <Compile Include="ViewModels\MainViewModel.cs" />
+    <Compile Include="Views\CreateTemplateWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\CreateTemplateWindow.Designer.cs">
+      <DependentUpon>CreateTemplateWindow.cs</DependentUpon>
+    </Compile>
+    <EmbeddedResource Include="MainForm.resx">
+      <DependentUpon>MainForm.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>
@@ -185,8 +193,6 @@
   <ItemGroup>
     <Folder Include="Convert\" />
     <Folder Include="Fakes\" />
-    <Folder Include="ViewModels\" />
-    <Folder Include="Views\" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
