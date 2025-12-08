@@ -1,5 +1,6 @@
+﻿
 using Params_OUMIT_;
-using Newtonsoft.Json;
+using Newtonsoft;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -7,8 +8,10 @@ using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using static System.Net.WebRequestMethods;
+using Audio900.Services;
 
-namespace Audio900.Services
+namespace Audio.Services
 {
     internal class PostMes
     {
@@ -101,8 +104,10 @@ namespace Audio900.Services
 
             string json = JsonHelper.ConvertJson(_passStation);
             string meslog = DateTime.Now.ToString("HH:mm:ss") + $"向Mes发送过站 {"getMESTestDataURL"}:  " + "\r\n" + json + "\r\n";
+            //Common.OnUpdateUI(meslog, LogType.日志, false);
             Post(url, json);
             meslog = DateTime.Now.ToString("HH:mm:ss") + "接收到Mes:  " + "\r\n" + _receiveMessage + "\r\n";
+            //Common.OnUpdateUI(meslog, LogType.日志, false);
             return _receiveMessage;
         }
         /// <summary>
@@ -128,9 +133,15 @@ namespace Audio900.Services
                 };
 
                 fs.Close();
-                string json = JsonHelper.ConvertJson(obj);
+                //_passStation.bytes = h;
+                 string json = JsonHelper.ConvertJson(obj);
                 Post("upPicURL", json);
                 return _receiveMessage;
+            }
+            
+            {
+                string s = "未启用mes上传图片功能";
+                return s;
             }
         }
 
@@ -155,6 +166,7 @@ namespace Audio900.Services
                 mesResult.RetMsg = postErr.Message;
                 _receiveMessage = JsonHelper.ConvertJson(mesResult);
                 ReceiveMessageEvent?.Invoke(_receiveMessage);
+                // PostErrorEvent?.Invoke(postErr.Message);
             }
         }
 

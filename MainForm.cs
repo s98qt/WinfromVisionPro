@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Audio900.Models;
 using Audio900.Services;
+using Audio900.Views;
 using Cognex.VisionPro;
 using Cognex.VisionPro.Display;
 
@@ -342,7 +343,43 @@ namespace Audio900
         /// </summary>
         private void btnTemplateManage_Click(object sender, EventArgs e)
         {
-            MessageBox.Show("模板管理功能待实现", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            WorkTemplate templateToEdit = null;
+            if (_currentTemplate != null)
+            {
+                var result = MessageBox.Show(
+                    $"是否编辑当前模板 '{_currentTemplate.TemplateName}'？\n点击'是'编辑当前模板，点击'否'创建新模板，点击'取消'返回。",
+                    "模板管理",
+                    MessageBoxButtons.YesNoCancel,
+                    MessageBoxIcon.Question);
+
+                if (result == DialogResult.Cancel) return;
+                if (result == DialogResult.Yes)
+                {
+                    templateToEdit = _currentTemplate;
+                }
+            }
+
+            var createTemplateWindow = new CreateTemplateWindow(_cameraService, templateToEdit);
+            if (createTemplateWindow.ShowDialog() == DialogResult.OK)
+            {
+                // 如果创建/编辑成功，刷新模板列表并选中
+                LoadTemplates();
+                if (createTemplateWindow.CreatedTemplate != null)
+                {
+                    _currentTemplate = createTemplateWindow.CreatedTemplate;
+                    
+                    // 选中刚创建的模板
+                    int index = cmbTemplates.Items.IndexOf(_currentTemplate.TemplateName);
+                    if (index != -1)
+                    {
+                        cmbTemplates.SelectedIndex = index;
+                    }
+                    
+                    // 保存模板数据
+                    _templateStorageService.SaveTemplate(_currentTemplate);
+                    UpdateStatus($"模板 '{_currentTemplate.TemplateName}' 已保存");
+                }
+            }
         }
 
         /// <summary>
