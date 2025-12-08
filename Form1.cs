@@ -61,6 +61,7 @@ namespace Audio900
             }
         }
 
+
         /// <summary>
         /// 加载模板列表
         /// </summary>
@@ -213,24 +214,40 @@ namespace Audio900
         {
             try
             {
-                listViewSteps.Items.Clear();
-                
-                if (_currentTemplate == null || _currentTemplate.Steps == null)
-                    return;
-                
-                foreach (var step in _currentTemplate.Steps)
+                // 新界面使用pictureBoxStep显示步骤图片
+                if (_currentTemplate == null || _currentTemplate.Steps == null || _currentTemplate.Steps.Count == 0)
                 {
-                    var item = new ListViewItem($"步骤 {step.StepNumber}");
-                    item.SubItems.Add("待检测");
-                    item.SubItems.Add("--");
-                    item.Tag = step;
-                    listViewSteps.Items.Add(item);
+                    lblStepTitle.Text = "无步骤";
+                    pictureBoxStep.Image = null;
+                    return;
+                }
+                
+                // 显示第一个步骤
+                var firstStep = _currentTemplate.Steps[0];
+                lblStepTitle.Text = $"步骤 {firstStep.StepNumber}";
+                
+                // 如果有图像，显示图像
+                if (firstStep.ImageSource != null)
+                {
+                    pictureBoxStep.Image = firstStep.ImageSource;
+                }
+                else
+                {
+                    pictureBoxStep.Image = null;
                 }
             }
             catch (Exception ex)
             {
                 LoggerService.Error(ex, "更新步骤显示失败");
             }
+        }
+
+        /// <summary>
+        /// 打开相机按钮点击
+        /// </summary>
+        private void btnOpenCamera_Click(object sender, EventArgs e)
+        {
+            Task.Run(async () => await InitializeCameras());
         }
 
         /// <summary>
