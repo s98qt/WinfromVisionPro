@@ -116,6 +116,7 @@
     <Reference Include="System.Configuration" />
     <Reference Include="System.Core" />
     <Reference Include="System.IO.Compression" />
+    <Reference Include="System.Management" />
     <Reference Include="System.Web" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
@@ -147,6 +148,7 @@
     <Compile Include="Services\iCam.cs" />
     <Compile Include="Services\iImg.cs" />
     <Compile Include="Services\JsonHelper.cs" />
+    <Compile Include="Services\LicenseVerifier.cs" />
     <Compile Include="Services\LoggerService.cs" />
     <Compile Include="Services\MultiCameraManager.cs" />
     <Compile Include="Services\Params.cs" />
