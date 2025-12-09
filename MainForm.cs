@@ -12,6 +12,11 @@ using Audio900.Services;
 using Audio900.Views;
 using Cognex.VisionPro;
 using Cognex.VisionPro.Display;
+using Newtonsoft.Json;
+using Audio.Services;
+using Params_OUMIT_;
+using System.Threading;
+using static Audio.Services.PostMes;
 
 namespace Audio900
 {
@@ -39,6 +44,79 @@ namespace Audio900
             _templateStorageService = new TemplateStorageService();
             _videoRecordingService = new VideoRecordingService();
             _multiCameraManager = new MultiCameraManager();
+
+            // 绑定扫码枪事件
+            txtProductSN.KeyDown += txtProductSN_KeyDown;
+        }
+
+        /// <summary>
+        /// 扫码枪输入产品SN后自动触发作业流程
+        /// </summary>
+        private async void txtProductSN_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                // 阻止Enter键的默认行为（如发出提示音）
+                e.SuppressKeyPress = true;
+                e.Handled = true;
+
+                if (string.IsNullOrWhiteSpace(txtProductSN.Text))
+                {
+                    MessageBox.Show("请扫描产品SN码", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                
+                string sn = txtProductSN.Text.Trim();
+                // 简单的防抖动（可选）
+                await Task.Delay(10);
+                
+                Params.Instance.SN = sn;
+                checkSN(Params.Instance.SN);
+
+                if (_currentTemplate == null)
+                {
+                    MessageBox.Show("请先选择作业模板", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // 自动启动作业流程
+                // 相当于调用 btnStart_Click 的逻辑
+                if (!_isWorkflowRunning)
+                {
+                    btnStart_Click(sender, e);
+                }
+            }
+        }
+
+        public void checkSN(string sn)
+        {
+            try
+            {
+                string strMesResult = PostMes.CreateInstance().PostCheckSN(sn);
+                MesResult mesResult = new MesResult();
+                mesResult = JsonConvert.DeserializeAnonymousType<MesResult>(strMesResult, mesResult);
+                
+                // Thread.Sleep(10); // UI线程最好不要Sleep
+                
+                if (mesResult.Result)
+                {
+                    // 验证通过，禁用输入框防止误触
+                    // this.txtProductSN.Enabled = false; // WinForms下禁用可能会导致无法再次扫码，视需求而定。通常扫码后会清空或全选。
+                    // 这里保持WPF逻辑：验证成功则认为SN有效
+                }
+                else
+                {
+                    // 验证失败，清空
+                    this.txtProductSN.Clear();
+                    Params.Instance.SN = "";
+                    MessageBox.Show($"SN校验失败: {mesResult.RetMsg}", "MES错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerService.Error(ex, "SN校验异常");
+            }
         }
 
         private async void Form1_Load(object sender, EventArgs e)
@@ -439,8 +517,6 @@ namespace Audio900
                 cmbTemplates.Enabled = false;
                 
                 // 启动工作流
-                // 注意：StartWorkflow 内部是异步的，但为了不阻塞 UI 线程，我们可以包装一下
-                // 不过 StartWorkflow 本身是 async Task，直接 await 即可
                 await _workflowService.StartWorkflow(
                     _currentTemplate, 
                     txtProductSN.Text, 

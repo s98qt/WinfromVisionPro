@@ -2,6 +2,7 @@ using Audio900.Models;
 using Audio900.Services;
 using Cognex.VisionPro;
 using Cognex.VisionPro.ImageFile;
+using Cognex.VisionPro.ImageProcessing;
 using Cognex.VisionPro.ToolBlock;
 using System;
 using System.Drawing;
@@ -145,6 +146,22 @@ namespace Audio900.Views
                 
                 if (snapshot != null)
                 {
+                    // Ensure image is Grayscale for VisionPro tools
+                    if (!(snapshot is CogImage8Grey))
+                    {
+                        try
+                        {
+                            CogImageConvertTool convertTool = new CogImageConvertTool();
+                            convertTool.InputImage = snapshot;
+                            convertTool.Run();
+                            if (convertTool.OutputImage != null)
+                            {
+                                snapshot = convertTool.OutputImage as CogImage8Grey;
+                            }
+                        }
+                        catch { /* Ignore conversion error, keep original */ }
+                    }
+
                     Step.CapturedImage = snapshot;
                     
                     using(var bmp = snapshot.ToBitmap())
