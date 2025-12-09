@@ -89,12 +89,12 @@ namespace Audio900.Services
                 _parentControl = parentControl;
                 
                 // 优先尝试初始化1960型号相机
-                bool init1960Success = TryInitialize1960Camera();
-                if (init1960Success)
-                {
-                    _cameraType = CameraType.Oumit1960;
-                    return true;
-                }
+                //bool init1960Success = TryInitialize1960Camera();
+                //if (init1960Success)
+                //{
+                //    _cameraType = CameraType.Oumit1960;
+                //    return true;
+                //}
                 
                 // 1960初始化失败,尝试1000型号
                 bool init1000Success = TryInitialize1000Camera();
@@ -667,26 +667,33 @@ namespace Audio900.Services
         /// </summary>
         private ICogImage ConvertBGRDataToCogImage(byte[] bgrData, int width, int height)
         {
+            GCHandle handle = default;
             try
             {
-                Bitmap bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
-                BitmapData bmpData = bitmap.LockBits(
-                    new Rectangle(0, 0, width, height),
-                    ImageLockMode.WriteOnly,
-                    PixelFormat.Format24bppRgb);
+                // 固定数组内存，获取指针
+                handle = GCHandle.Alloc(bgrData, GCHandleType.Pinned);
+                IntPtr ptr = handle.AddrOfPinnedObject();
                 
-                Marshal.Copy(bgrData, 0, bmpData.Scan0, bgrData.Length);
-                bitmap.UnlockBits(bmpData);
+                int stride = width * 3; // 24位 BGR 的步长 (假设数据是紧密排列的)
                 
-                CogImage24PlanarColor cogImage = new CogImage24PlanarColor(bitmap);
-                
-                bitmap.Dispose();
-                return cogImage;
+                // 1. 用 C# 标准 Bitmap 封装指针 (零拷贝)
+                using (Bitmap bitmap = new Bitmap(width, height, stride, PixelFormat.Format24bppRgb, ptr))
+                {
+                    // 2. 将 Bitmap 转为 VisionPro 图像
+                    return new CogImage24PlanarColor(bitmap);
+                }
             }
             catch (Exception ex)
             {
                 LoggerService.Error(ex, $"BGR数据转换失败: {ex.Message}");
                 return null;
+            }
+            finally
+            {
+                if (handle.IsAllocated)
+                {
+                    handle.Free();
+                }
             }
         }
 
@@ -697,30 +704,16 @@ namespace Audio900.Services
         {
             try
             {
-                Bitmap bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
-                BitmapData bmpData = bitmap.LockBits(
-                    new Rectangle(0, 0, width, height),
-                    ImageLockMode.WriteOnly,
-                    PixelFormat.Format24bppRgb);
+                // 使用用户提供的零拷贝方法：用 Bitmap 封装指针
+                int stride = width * 3; // 24位 BGR 的步长 (假设数据是紧密排列的)
                 
-                int bufferSize = width * height * 3;
-                
-                unsafe
+                // 1. 用 C# 标准 Bitmap 封装指针
+                // PixelFormat.Format24bppRgb 在 Windows 下默认就是 BGR 顺序
+                using (Bitmap bitmap = new Bitmap(width, height, stride, PixelFormat.Format24bppRgb, rgbBuffer))
                 {
-                    byte* src = (byte*)rgbBuffer;
-                    byte* dst = (byte*)bmpData.Scan0;
-                    for(int i=0; i<bufferSize; i++)
-                    {
-                        dst[i] = src[i];
-                    }
+                    // 2. 将 Bitmap 转为 VisionPro 图像（VisionPro 会处理内存拷贝和重排）
+                    return new CogImage24PlanarColor(bitmap);
                 }
-                
-                bitmap.UnlockBits(bmpData);
-                
-                CogImage24PlanarColor cogImage = new CogImage24PlanarColor(bitmap);
-                
-                bitmap.Dispose();
-                return cogImage;
             }
             catch (Exception ex)
             {

@@ -81,7 +81,9 @@ namespace Audio900.Views
                 foreach(var p in step.Parameters)
                 {
                     newStep.Parameters.Add(new StepParameter { 
-                        Id=p.Id, Name=p.Name, IsEnabled=p.IsEnabled, LowerLimit=p.LowerLimit, UpperLimit=p.UpperLimit
+                        Id=p.Id, Name=p.Name, IsEnabled=p.IsEnabled,
+                        StandardValue = p.StandardValue,
+                        Tolerance = p.Tolerance
                     });
                 }
                 

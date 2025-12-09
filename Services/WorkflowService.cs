@@ -851,10 +851,12 @@ namespace Audio900.Services
                                     return (false, $"缺少输出参数: {param.Name}", results);
                                 }
                                 
-                                double val = results[param.Name];
-                                if (val < param.LowerLimit || val > param.UpperLimit)
+                                double actualVal = results[param.Name];
+                                double diff = Math.Abs(actualVal - param.StandardValue);
+                                
+                                if (diff > param.Tolerance)
                                 {
-                                    return (false, $"参数[{param.Name}]超差: {val:F3} (范围:{param.LowerLimit}-{param.UpperLimit})", results);
+                                    return (false, $"参数[{param.Name}]超差: 实际{actualVal:F3} 标准{param.StandardValue:F3} 偏差{diff:F3} > 公差{param.Tolerance}", results);
                                 }
                             }
                             return (true, "参数检测通过", results);

@@ -497,12 +497,12 @@ namespace Audio900
             try
             {
                 // 验证输入
-                if (string.IsNullOrWhiteSpace(txtProductSN.Text))
-                {
-                    MessageBox.Show("请输入产品SN码", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    txtProductSN.Focus();
-                    return;
-                }
+                //if (string.IsNullOrWhiteSpace(txtProductSN.Text))
+                //{
+                //    MessageBox.Show("请输入产品SN码", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                //    txtProductSN.Focus();
+                //    return;
+                //}
                 
                 if (_currentTemplate == null)
                 {

@@ -2,7 +2,6 @@ using Cognex.VisionPro;
 using System;
 using System.ComponentModel;
 using System.Drawing;
-using System.Collections.ObjectModel;
 
 namespace Audio900.Models
 {
@@ -14,8 +13,8 @@ namespace Audio900.Models
         private int _id;
         private string _name;
         private bool _isEnabled;
-        private double _lowerLimit;
-        private double _upperLimit;
+        private double _standardValue;
+        private double _tolerance;
 
         public int Id
         {
@@ -35,16 +34,16 @@ namespace Audio900.Models
             set { _isEnabled = value; OnPropertyChanged(nameof(IsEnabled)); }
         }
 
-        public double LowerLimit
+        public double StandardValue
         {
-            get => _lowerLimit;
-            set { _lowerLimit = value; OnPropertyChanged(nameof(LowerLimit)); }
+            get => _standardValue;
+            set { _standardValue = value; OnPropertyChanged(nameof(StandardValue)); }
         }
 
-        public double UpperLimit
+        public double Tolerance
         {
-            get => _upperLimit;
-            set { _upperLimit = value; OnPropertyChanged(nameof(UpperLimit)); }
+            get => _tolerance;
+            set { _tolerance = value; OnPropertyChanged(nameof(Tolerance)); }
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
@@ -72,15 +71,15 @@ namespace Audio900.Models
 
         public WorkStep()
         {
-            Parameters = new ObservableCollection<StepParameter>();
+            Parameters = new BindingList<StepParameter>();
             // 默认添加两个示例参数
-            Parameters.Add(new StepParameter { Id = 1, Name = "匹配参数", IsEnabled = true, LowerLimit = 0.5, UpperLimit = 1.0 });
-            Parameters.Add(new StepParameter { Id = 2, Name = "量测参数", IsEnabled = true, LowerLimit = 0.5, UpperLimit = 1.0 });
+            Parameters.Add(new StepParameter { Id = 1, Name = "匹配参数", IsEnabled = true, StandardValue = 10.0, Tolerance = 0.5 });
+            Parameters.Add(new StepParameter { Id = 2, Name = "量测参数", IsEnabled = true, StandardValue = 20.0, Tolerance = 0.5 });
         }
 
         public int StepNumber { get; set; }
 
-        public ObservableCollection<StepParameter> Parameters { get; set; }
+        public BindingList<StepParameter> Parameters { get; set; }
 
         public bool SyncNextStepsEnabled
         {

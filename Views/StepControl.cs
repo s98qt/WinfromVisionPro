@@ -7,6 +7,7 @@ using Cognex.VisionPro.ToolBlock;
 using System;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Windows.Forms;
 
 namespace Audio900.Views
@@ -46,8 +47,6 @@ namespace Audio900.Views
         private void BindData()
         {
             if (Step == null) return;
-            
-            lblStepName.Text = $"作业步骤 {Step.StepNumber}";
             groupBoxStep.Text = $"作业步骤 {Step.StepNumber}";
             txtTimeout.Text = Step.Timeout.ToString();
             chkShowPrompt.Checked = Step.ShowFailurePrompt;
@@ -64,8 +63,8 @@ namespace Audio900.Views
             dgvParams.Columns.Clear();
             dgvParams.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "名称", DataPropertyName = "Name", Width = 80 });
             dgvParams.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "启用", DataPropertyName = "IsEnabled", Width = 40 });
-            dgvParams.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "下限", DataPropertyName = "LowerLimit", Width = 60 });
-            dgvParams.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "上限", DataPropertyName = "UpperLimit", Width = 60 });
+            dgvParams.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "标准值", DataPropertyName = "StandardValue", Width = 60, ReadOnly = true });
+            dgvParams.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "公差", DataPropertyName = "Tolerance", Width = 60 });
             
             var deleteBtn = new DataGridViewButtonColumn();
             deleteBtn.HeaderText = "操作";
@@ -99,8 +98,8 @@ namespace Audio900.Views
                  Id = nextId, 
                  Name = $"参数{nextId}", 
                  IsEnabled = true, 
-                 LowerLimit = 0.5, 
-                 UpperLimit = 1.0 
+                 StandardValue = 0.0, 
+                 Tolerance = 0.5 
              });
         }
 
@@ -247,6 +246,50 @@ namespace Audio900.Views
                     {
                          CogSerializer.SaveObjectToFile(toolBlock, vppPath);
                          editControl.Dispose();
+                         
+                         // 自动同步 VPP 输出参数到步骤参数列表
+                         try
+                         {
+                             // 运行一次以获取最新值（标准值）
+                             toolBlock.Run();
+                             
+                             foreach (CogToolBlockTerminal terminal in toolBlock.Outputs)
+                             {
+                                 if (terminal.Value == null) continue;
+                                 
+                                 // 只处理数值类型的输出
+                                 if (double.TryParse(terminal.Value.ToString(), out double val))
+                                 {
+                                     var existingParam = Step.Parameters.FirstOrDefault(p => p.Name == terminal.Name);
+                                     if (existingParam != null)
+                                     {
+                                         // 更新标准值
+                                         existingParam.StandardValue = val;
+                                     }
+                                     else
+                                     {
+                                         // 自动添加新参数
+                                         Step.Parameters.Add(new StepParameter
+                                         {
+                                             Id = Step.Parameters.Count + 1,
+                                             Name = terminal.Name,
+                                             IsEnabled = true,
+                                             StandardValue = val,
+                                             Tolerance = 0.5 // 默认公差
+                                         });
+                                     }
+                                 }
+                             }
+                             // 刷新界面
+                             // BindingList 会自动通知 DataGridView 更新，但重置 DataSource 更可靠
+                             dgvParams.DataSource = null;
+                             dgvParams.DataSource = Step.Parameters;
+                             dgvParams.Refresh();
+                         }
+                         catch (Exception ex)
+                         {
+                             MessageBox.Show($"同步参数失败: {ex.Message}");
+                         }
                     };
                     
                     editorForm.ShowDialog();
