@@ -3,7 +3,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Audio.Services
+namespace Audio900.Services
 {
     /// <summary>
     /// 许可证验证服务

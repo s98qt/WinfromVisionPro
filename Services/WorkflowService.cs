@@ -3,6 +3,8 @@ using Audio900.Models;
 using Cognex.VisionPro;
 using Cognex.VisionPro.ImageFile;
 using Cognex.VisionPro.Implementation;
+using Cognex.VisionPro.ImageProcessing;
+using Cognex.VisionPro.ToolBlock;
 using NLog;
 using Params_OUMIT_;
 using System;
@@ -46,6 +48,9 @@ namespace Audio900.Services
         
         // 离线模式测试图片索引
         private int _offlineImageIndex = 0;
+
+        // ToolBlock 缓存
+        private Dictionary<int, CogToolBlock> _stepToolBlocks = new Dictionary<int, CogToolBlock>();
 
         // 图像稳定性判断相关字段
         private ICogImage _previousGrayImage = null;  // 上一帧灰度图像
@@ -117,12 +122,31 @@ namespace Audio900.Services
                     
                     _logger.Info($"开始从文件重新加载模板数据...");
                     
+                    _stepToolBlocks.Clear();
+                    
                     foreach (var step in _currentTemplate.WorkSteps)
                     {
                         string stepFolder = Path.Combine(templatePath, $"Step{step.StepNumber}");
                         string modelPath = Path.Combine(stepFolder, "model.shm");
                         
-                        if (File.Exists(modelPath))
+                        // 优先加载 ToolBlockPath (VisionPro 模式)
+                        if (!string.IsNullOrEmpty(step.ToolBlockPath) && File.Exists(step.ToolBlockPath))
+                        {
+                            try
+                            {
+                                var tb = CogSerializer.LoadObjectFromFile(step.ToolBlockPath) as CogToolBlock;
+                                if (tb != null)
+                                {
+                                    _stepToolBlocks[step.StepNumber] = tb;
+                                    _logger.Info($"步骤 {step.StepNumber}: Loaded ToolBlock from {step.ToolBlockPath}");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.Error($"步骤 {step.StepNumber}: Failed to load ToolBlock: {ex.Message}");
+                            }
+                        }
+                        else if (File.Exists(modelPath))
                         {
                             try
                             {
@@ -248,14 +272,17 @@ namespace Audio900.Services
                     UpdateStatus($"步骤{step.StepNumber}: 图像稳定，正在进行模板匹配...");
                     await ChangeState(WorkflowState.CheckingScore);
                     
-                    // 获取匹配结果（分数、位置、角度）
-                    var result = await CheckMatchScore(currentImage, step);
-                    UpdateStatus($"步骤{step.StepNumber}: 匹配分数 = {result.score:F3} (阈值: {step.ScoreThreshold})");
+                    // 执行视觉检测（包含参数公差比对）
+                    var inspection = await RunVisionInspection(currentImage, step);
+                    UpdateStatus($"步骤{step.StepNumber}: {inspection.Reason}");
                     
                     // 步骤4：判断匹配结果
-                    if (result.score >= step.ScoreThreshold)
+                    if (inspection.Passed)
                     {
                         stepPassed = true;
+
+                        // 尝试获取分数用于显示
+                        double score = inspection.Results.ContainsKey("Score") ? inspection.Results["Score"] : 1.0;
 
                         // 构建保存路径（使用固定的 D 盘路径）
                         string baseFolder = @"D:\data\ZIPImg";
@@ -282,17 +309,17 @@ namespace Audio900.Services
                         await UpdateStepImage(step, validImage);
                         UpdateStatus($"步骤{step.StepNumber}: 检测通过");
                         
-                        step.ActualScore = result.score;
+                        step.ActualScore = score;
                         step.CompletedTime = DateTime.Now;
                         
-                        _logger.Info($"步骤{step.StepNumber}: 检测通过 - 匹配分数={result.score:F3}, 总检测次数={totalCheckCount}");
+                        _logger.Info($"步骤{step.StepNumber}: 检测通过 - {inspection.Reason}, 总检测次数={totalCheckCount}");
                         OnStepCompleted?.Invoke(step);
                     }
                     else
                     {
-                        // 图像稳定但匹配分数不足，释放图像并重新采集
-                        UpdateStatus($"步骤{step.StepNumber}: 匹配分数不足({result.score:F3} < {step.ScoreThreshold})，重新采集...");
-                        _logger.Debug($"步骤{step.StepNumber}: 匹配失败 - 分数={result.score:F3}, 阈值={step.ScoreThreshold}, 继续检测...");
+                        // 图像稳定但检测失败，释放图像并重新采集
+                        UpdateStatus($"步骤{step.StepNumber}: 检测失败 - {inspection.Reason}，重新采集...");
+                        _logger.Debug($"步骤{step.StepNumber}: 检测失败 - {inspection.Reason}, 继续检测...");
                         
                         // 重置稳定性检测状态，准备下一次采集
                         ResetStabilityCheck();
@@ -521,7 +548,27 @@ namespace Audio900.Services
                     return true; // 返回 true 表示有问题
                 }
 
-                ICogImage currentGray = currentFrame; 
+                // Ensure grayscale
+                ICogImage currentGray = null;
+                if (currentFrame is CogImage8Grey)
+                {
+                    currentGray = currentFrame;
+                }
+                else
+                {
+                    // Convert to Grey if possible
+                     try 
+                     {
+                         CogImageConvertTool convertTool = new CogImageConvertTool();
+                         convertTool.InputImage = currentFrame;
+                         convertTool.Run();
+                         currentGray = convertTool.OutputImage as CogImage8Grey;
+                     }
+                     catch
+                     {
+                         currentGray = currentFrame; // Fallback
+                     }
+                }
                 
                 if (_previousGrayImage == null)
                 {
@@ -584,12 +631,31 @@ namespace Audio900.Services
         {
             try
             {
-                // 这里暂时返回模拟值 0，表示无差异，以保证编译通过
+                if (grayImage1 == null || grayImage2 == null) return 0.0;
+
+                // TODO: 修复引用问题后取消注释. 需要引用 Cognex.VisionPro.ImageProcessing.dll
+
+                // Use the Operator class directly with Execute method for VisionPro 9.0
+                CogIPTwoImageSubtract subtractOp = new CogIPTwoImageSubtract();
+                subtractOp.OverflowMode = CogIPTwoImageSubtractOverflowModeConstants.Absolute;
+                ICogImage diffImage = subtractOp.Execute(grayImage1, grayImage2, null,null);
+
+                CogHistogramTool histTool = new CogHistogramTool();
+                histTool.InputImage = diffImage as CogImage8Grey;
+                if (histTool.InputImage == null) return 0.0;
+
+                histTool.Run();
+
+                if (histTool.Result != null)
+                {
+                    return histTool.Result.Mean;
+                }
+
                 return 0.0;
             }
             catch (Exception ex)
             {
-                UpdateStatus($"灰度差计算异常: {ex.Message}");
+                _logger.Error($"灰度差计算异常: {ex.Message}");
                 return 999.0; 
             }
         }
@@ -736,18 +802,87 @@ namespace Audio900.Services
             }
         }
 
-        private async Task<(double score, double row, double col, double angle)> CheckMatchScore(ICogImage image, WorkStep step)
+        /// <summary>
+        /// 执行视觉检测：运行工具块并校验参数公差
+        /// </summary>
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results)> RunVisionInspection(ICogImage image, WorkStep step)
         {
-            try
+            return await Task.Run(() => 
             {
-                await Task.Delay(50);
-                return (0.95, 100, 100, 0);
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"VisionPro 匹配异常: {ex.Message}");
-                return (0.0, 0, 0, 0);
-            }
+                var results = new Dictionary<string, double>();
+                try
+                {
+                    if (!_stepToolBlocks.TryGetValue(step.StepNumber, out CogToolBlock toolBlock))
+                    {
+                        _logger.Warn($"步骤 {step.StepNumber}: 未加载 ToolBlock");
+                        return (false, "ToolBlock未加载", results);
+                    }
+
+                    lock (toolBlock)
+                    {
+                        // Set Input
+                        if (toolBlock.Inputs.Contains("InputImage"))
+                        {
+                            toolBlock.Inputs["InputImage"].Value = image;
+                        }
+                        
+                        toolBlock.Run();
+                        
+                        // 1. 收集所有 Output Terminal 的值
+                        foreach(CogToolBlockTerminal terminal in toolBlock.Outputs)
+                        {
+                            if (terminal.Value == null) continue;
+
+                            if (double.TryParse(terminal.Value.ToString(), out double val))
+                            {
+                                results[terminal.Name] = val;
+                            }
+                        }
+                        
+                        // 2. 校验参数公差
+                        if (step.Parameters != null && step.Parameters.Count > 0)
+                        {
+                            foreach(var param in step.Parameters)
+                            {
+                                if (!param.IsEnabled) continue;
+                                
+                                if (!results.ContainsKey(param.Name))
+                                {
+                                    return (false, $"缺少输出参数: {param.Name}", results);
+                                }
+                                
+                                double val = results[param.Name];
+                                if (val < param.LowerLimit || val > param.UpperLimit)
+                                {
+                                    return (false, $"参数[{param.Name}]超差: {val:F3} (范围:{param.LowerLimit}-{param.UpperLimit})", results);
+                                }
+                            }
+                            return (true, "参数检测通过", results);
+                        }
+                        else
+                        {
+                            // 回退逻辑：如果未定义任何参数，则检查是否有 "Score" 且 >= ScoreThreshold
+                            if (results.ContainsKey("Score"))
+                            {
+                                double score = results["Score"];
+                                if (score >= step.ScoreThreshold) return (true, $"分数达标({score:F3})", results);
+                                else return (false, $"分数不足: {score:F3} < {step.ScoreThreshold}", results);
+                            }
+                            
+                            // 既无参数也无Score，仅判断工具运行状态
+                            if (toolBlock.RunStatus.Result == CogToolResultConstants.Accept)
+                                return (true, "工具运行成功(无参数检查)", results);
+                            else
+                                return (false, $"工具运行失败: {toolBlock.RunStatus.Message}", results);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"VisionPro 运行异常: {ex.Message}");
+                    return (false, $"视觉异常: {ex.Message}", results);
+                }
+            });
         }
 
         string ZIPName = string.Empty;
@@ -773,17 +908,20 @@ namespace Audio900.Services
                 
                 _logger.Info($"开始压缩图片: {imageFolderPath} -> {zipFullPath}");
                 
-                // 需要确保 ZIPHelper 可用
-                // if (!ZIPHelper.myZIPHelper.ZIP(imageFolderPath, zipFullPath, ref errorMsg))
-                // {
-                //     _logger.Error($"压缩图片失败: {errorMsg}");
-                //     MessageBox.Show($"压缩图片失败: {errorMsg}", "警告", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                // }
-                // else
-                // {
-                //     _logger.Info($"压缩成功: {zipFullPath}");
-                //     Params.Instance.privateParams.ImagePath = zipFullPath;
-                // }
+                // 需要确保 ZIPHelper 可用 (TODO: Fix ZIPHelper reference)
+                /*
+                string resultMsg = "";
+                if (!myZIPHelper.ZIP(imageFolderPath, zipFullPath, ref resultMsg))
+                {
+                    _logger.Error($"压缩图片失败: {resultMsg}");
+                    // MessageBox.Show($"压缩图片失败: {resultMsg}", "警告", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+                else
+                {
+                    _logger.Info($"压缩成功: {zipFullPath}");
+                    // Params.Instance.privateParams.ImagePath = zipFullPath;
+                }
+                */
                 
                 await Task.Delay(500);
             }
