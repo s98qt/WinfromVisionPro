@@ -96,8 +96,16 @@ namespace Audio900.Services
                     if (!string.IsNullOrEmpty(step.ToolBlockPath) && File.Exists(step.ToolBlockPath))
                     {
                         string toolBlockDestPath = Path.Combine(stepFolder, "toolblock.vpp");
-                        File.Copy(step.ToolBlockPath, toolBlockDestPath, true);
-                        step.ToolBlockPath = toolBlockDestPath; // 更新路径
+                        
+                        // 检查源路径和目标路径是否相同，避免自我复制导致IO异常
+                        string fullSourcePath = Path.GetFullPath(step.ToolBlockPath);
+                        string fullDestPath = Path.GetFullPath(toolBlockDestPath);
+                        
+                        if (!string.Equals(fullSourcePath, fullDestPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            File.Copy(step.ToolBlockPath, toolBlockDestPath, true);
+                            step.ToolBlockPath = toolBlockDestPath; // 更新路径
+                        }
                     }
                 }
 

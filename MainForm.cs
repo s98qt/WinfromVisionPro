@@ -362,22 +362,24 @@ namespace Audio900
             var createTemplateWindow = new CreateTemplateWindow(_cameraService, templateToEdit);
             if (createTemplateWindow.ShowDialog() == DialogResult.OK)
             {
-                // 如果创建/编辑成功，刷新模板列表并选中
-                LoadTemplates();
+                // 先保存模板数据，确保磁盘上有最新数据
                 if (createTemplateWindow.CreatedTemplate != null)
                 {
-                    _currentTemplate = createTemplateWindow.CreatedTemplate;
-                    
-                    // 选中刚创建的模板
-                    int index = cmbTemplates.Items.IndexOf(_currentTemplate.TemplateName);
+                    _templateStorageService.SaveTemplate(createTemplateWindow.CreatedTemplate);
+                    UpdateStatus($"模板 '{createTemplateWindow.CreatedTemplate.TemplateName}' 已保存");
+                }
+
+                // 刷新模板列表
+                LoadTemplates();
+
+                // 选中模板 (这将触发 LoadTemplate 从磁盘加载)
+                if (createTemplateWindow.CreatedTemplate != null)
+                {
+                    int index = cmbTemplates.Items.IndexOf(createTemplateWindow.CreatedTemplate.TemplateName);
                     if (index != -1)
                     {
                         cmbTemplates.SelectedIndex = index;
                     }
-                    
-                    // 保存模板数据
-                    _templateStorageService.SaveTemplate(_currentTemplate);
-                    UpdateStatus($"模板 '{_currentTemplate.TemplateName}' 已保存");
                 }
             }
         }
