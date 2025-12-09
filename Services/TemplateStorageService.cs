@@ -300,7 +300,15 @@ namespace Audio900.Services
                 if (!File.Exists(filePath))
                     return null;
 
-                return Image.FromFile(filePath);
+                // 使用FileStream加载，避免文件锁定
+                using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+                {
+                    using (var img = Image.FromStream(fs))
+                    {
+                        // 创建副本以允许流关闭
+                        return new Bitmap(img);
+                    }
+                }
             }
             catch (Exception ex)
             {

@@ -219,26 +219,49 @@ namespace Audio900
         {
             try
             {
-                // 新界面使用pictureBoxStep显示步骤图片
+                flpMainSteps.Controls.Clear();
+                
                 if (_currentTemplate == null || _currentTemplate.Steps == null || _currentTemplate.Steps.Count == 0)
                 {
-                    lblStepTitle.Text = "无步骤";
-                    pictureBoxStep.Image = null;
                     return;
                 }
                 
-                // 显示第一个步骤
-                var firstStep = _currentTemplate.Steps[0];
-                lblStepTitle.Text = $"步骤 {firstStep.StepNumber}";
-                
-                // 如果有图像，显示图像
-                if (firstStep.ImageSource != null)
+                foreach(var step in _currentTemplate.Steps)
                 {
-                    pictureBoxStep.Image = firstStep.ImageSource;
-                }
-                else
-                {
-                    pictureBoxStep.Image = null;
+                    // Create panel for each step
+                    var stepPanel = new Panel
+                    {
+                        Width = flpMainSteps.Width - 25,
+                        Height = 150,
+                        BorderStyle = BorderStyle.FixedSingle,
+                        BackColor = Color.WhiteSmoke,
+                        Margin = new Padding(0, 0, 0, 5),
+                        Tag = step // Store step object in Tag
+                    };
+                    
+                    var lbl = new Label
+                    {
+                        Text = $"步骤 {step.StepNumber}\r\n{step.Name}",
+                        Dock = DockStyle.Left,
+                        Width = 100,
+                        TextAlign = ContentAlignment.TopLeft,
+                        Padding = new Padding(5, 10, 0, 0),
+                        Font = new Font("微软雅黑", 10, FontStyle.Bold),
+                        BackColor = Color.Transparent
+                    };
+                    
+                    var pic = new PictureBox
+                    {
+                        Dock = DockStyle.Fill,
+                        SizeMode = PictureBoxSizeMode.Zoom,
+                        Image = step.ImageSource,
+                        BackColor = Color.FromArgb(230, 230, 230)
+                    };
+                    
+                    stepPanel.Controls.Add(pic);
+                    stepPanel.Controls.Add(lbl);
+                    
+                    flpMainSteps.Controls.Add(stepPanel);
                 }
             }
             catch (Exception ex)
@@ -311,11 +334,15 @@ namespace Audio900
                 return;
             }
             
-            // 更新步骤图片显示
-            lblStepTitle.Text = $"步骤 {step.StepNumber}\r\n{step.Name}";
-            if (step.ImageSource != null)
+            // Find the panel for this step and highlight it
+            foreach(Control ctrl in flpMainSteps.Controls)
             {
-                pictureBoxStep.Image = step.ImageSource;
+                if (ctrl is Panel p && p.Tag == step)
+                {
+                    p.BackColor = Color.LightGreen; // Highlight completed
+                    flpMainSteps.ScrollControlIntoView(p);
+                    break;
+                }
             }
         }
         

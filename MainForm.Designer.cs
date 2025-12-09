@@ -55,9 +55,7 @@
             this.cmbTemplates = new System.Windows.Forms.ComboBox();
             this.btnTemplateManage = new System.Windows.Forms.Button();
             this.label6 = new System.Windows.Forms.Label();
-            this.panelStepImage = new System.Windows.Forms.Panel();
-            this.pictureBoxStep = new System.Windows.Forms.PictureBox();
-            this.lblStepTitle = new System.Windows.Forms.Label();
+            this.flpMainSteps = new System.Windows.Forms.FlowLayoutPanel();
             this.panelMesStatus = new System.Windows.Forms.Panel();
             this.lblMesStatus = new System.Windows.Forms.Label();
             this.lblResult = new System.Windows.Forms.Label();
@@ -73,8 +71,6 @@
             this.panelCameraDisplay.SuspendLayout();
             this.statusStrip1.SuspendLayout();
             this.panelRight.SuspendLayout();
-            this.panelStepImage.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.pictureBoxStep)).BeginInit();
             this.panelMesStatus.SuspendLayout();
             this.SuspendLayout();
             // 
@@ -106,7 +102,7 @@
             this.tlpInputFields.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 30F));
             this.tlpInputFields.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 30F));
             this.tlpInputFields.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 30F));
-            this.tlpInputFields.Size = new System.Drawing.Size(310, 90);
+            this.tlpInputFields.Size = new System.Drawing.Size(309, 94);
             this.tlpInputFields.TabIndex = 1;
             // 
             // lblProductSN
@@ -151,7 +147,7 @@
             this.txtViewNo.Margin = new System.Windows.Forms.Padding(2, 3, 2, 3);
             this.txtViewNo.Name = "txtViewNo";
             this.txtViewNo.ReadOnly = true;
-            this.txtViewNo.Size = new System.Drawing.Size(76, 31);
+            this.txtViewNo.Size = new System.Drawing.Size(75, 31);
             this.txtViewNo.TabIndex = 3;
             // 
             // lblEmployeeId
@@ -196,7 +192,7 @@
             this.txtStationNo.Margin = new System.Windows.Forms.Padding(2, 3, 2, 3);
             this.txtStationNo.Name = "txtStationNo";
             this.txtStationNo.ReadOnly = true;
-            this.txtStationNo.Size = new System.Drawing.Size(76, 31);
+            this.txtStationNo.Size = new System.Drawing.Size(75, 31);
             this.txtStationNo.TabIndex = 7;
             // 
             // label4
@@ -204,7 +200,7 @@
             this.label4.Anchor = System.Windows.Forms.AnchorStyles.Left;
             this.label4.AutoSize = true;
             this.label4.Font = new System.Drawing.Font("微软雅黑", 9F);
-            this.label4.Location = new System.Drawing.Point(2, 63);
+            this.label4.Location = new System.Drawing.Point(2, 65);
             this.label4.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.label4.Name = "label4";
             this.label4.Size = new System.Drawing.Size(50, 24);
@@ -227,7 +223,7 @@
             this.label5.Anchor = System.Windows.Forms.AnchorStyles.Left;
             this.label5.AutoSize = true;
             this.label5.Font = new System.Drawing.Font("微软雅黑", 9F);
-            this.label5.Location = new System.Drawing.Point(160, 63);
+            this.label5.Location = new System.Drawing.Point(160, 65);
             this.label5.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.label5.Name = "label5";
             this.label5.Size = new System.Drawing.Size(68, 24);
@@ -242,7 +238,7 @@
             this.txtFileName.Margin = new System.Windows.Forms.Padding(2, 3, 2, 3);
             this.txtFileName.Name = "txtFileName";
             this.txtFileName.ReadOnly = true;
-            this.txtFileName.Size = new System.Drawing.Size(76, 31);
+            this.txtFileName.Size = new System.Drawing.Size(75, 31);
             this.txtFileName.TabIndex = 11;
             // 
             // panelTop
@@ -264,7 +260,7 @@
             this.btnOpenCamera.BackColor = System.Drawing.Color.White;
             this.btnOpenCamera.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnOpenCamera.Font = new System.Drawing.Font("微软雅黑", 10.5F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
-            this.btnOpenCamera.Location = new System.Drawing.Point(1235, 13);
+            this.btnOpenCamera.Location = new System.Drawing.Point(1234, 9);
             this.btnOpenCamera.Margin = new System.Windows.Forms.Padding(2, 3, 2, 3);
             this.btnOpenCamera.Name = "btnOpenCamera";
             this.btnOpenCamera.Size = new System.Drawing.Size(110, 33);
@@ -280,7 +276,7 @@
             this.lblCameraStatus.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
             this.lblCameraStatus.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
             this.lblCameraStatus.ForeColor = System.Drawing.Color.White;
-            this.lblCameraStatus.Location = new System.Drawing.Point(1100, 15);
+            this.lblCameraStatus.Location = new System.Drawing.Point(1095, 9);
             this.lblCameraStatus.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblCameraStatus.Name = "lblCameraStatus";
             this.lblCameraStatus.Size = new System.Drawing.Size(127, 34);
@@ -317,7 +313,7 @@
             // 
             this.splitContainer1.Panel2.Controls.Add(this.panelRight);
             this.splitContainer1.Size = new System.Drawing.Size(1355, 720);
-            this.splitContainer1.SplitterDistance = 1024;
+            this.splitContainer1.SplitterDistance = 1025;
             this.splitContainer1.SplitterWidth = 3;
             this.splitContainer1.TabIndex = 1;
             // 
@@ -329,7 +325,7 @@
             this.panelCameraDisplay.Location = new System.Drawing.Point(0, 0);
             this.panelCameraDisplay.Margin = new System.Windows.Forms.Padding(2, 3, 2, 3);
             this.panelCameraDisplay.Name = "panelCameraDisplay";
-            this.panelCameraDisplay.Size = new System.Drawing.Size(1024, 689);
+            this.panelCameraDisplay.Size = new System.Drawing.Size(1025, 689);
             this.panelCameraDisplay.TabIndex = 0;
             // 
             // lblNoCamera
@@ -354,14 +350,14 @@
             this.statusStrip1.Location = new System.Drawing.Point(0, 689);
             this.statusStrip1.Name = "statusStrip1";
             this.statusStrip1.Padding = new System.Windows.Forms.Padding(1, 0, 11, 0);
-            this.statusStrip1.Size = new System.Drawing.Size(1024, 31);
+            this.statusStrip1.Size = new System.Drawing.Size(1025, 31);
             this.statusStrip1.TabIndex = 1;
             this.statusStrip1.Text = "statusStrip1";
             // 
             // toolStripStatusLabel1
             // 
             this.toolStripStatusLabel1.Name = "toolStripStatusLabel1";
-            this.toolStripStatusLabel1.Size = new System.Drawing.Size(925, 24);
+            this.toolStripStatusLabel1.Size = new System.Drawing.Size(926, 24);
             this.toolStripStatusLabel1.Spring = true;
             this.toolStripStatusLabel1.Text = "系统就绪";
             this.toolStripStatusLabel1.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
@@ -379,15 +375,14 @@
             this.panelRight.Controls.Add(this.tlpInputFields);
             this.panelRight.Controls.Add(this.btnTemplateManage);
             this.panelRight.Controls.Add(this.label6);
-            this.panelRight.Controls.Add(this.panelStepImage);
+            this.panelRight.Controls.Add(this.flpMainSteps);
             this.panelRight.Controls.Add(this.panelMesStatus);
             this.panelRight.Controls.Add(this.lblResult);
             this.panelRight.Dock = System.Windows.Forms.DockStyle.Fill;
             this.panelRight.Location = new System.Drawing.Point(0, 0);
-            this.panelRight.Margin = new System.Windows.Forms.Padding(2, 3, 2, 3);
             this.panelRight.Name = "panelRight";
-            this.panelRight.Padding = new System.Windows.Forms.Padding(4, 4, 4, 4);
-            this.panelRight.Size = new System.Drawing.Size(328, 720);
+            this.panelRight.Padding = new System.Windows.Forms.Padding(5);
+            this.panelRight.Size = new System.Drawing.Size(327, 720);
             this.panelRight.TabIndex = 0;
             // 
             // cmbTemplates
@@ -397,10 +392,9 @@
             this.cmbTemplates.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.cmbTemplates.Font = new System.Drawing.Font("微软雅黑", 9F);
             this.cmbTemplates.FormattingEnabled = true;
-            this.cmbTemplates.Location = new System.Drawing.Point(4, 9);
-            this.cmbTemplates.Margin = new System.Windows.Forms.Padding(2, 3, 2, 3);
+            this.cmbTemplates.Location = new System.Drawing.Point(3, 3);
             this.cmbTemplates.Name = "cmbTemplates";
-            this.cmbTemplates.Size = new System.Drawing.Size(310, 32);
+            this.cmbTemplates.Size = new System.Drawing.Size(304, 32);
             this.cmbTemplates.TabIndex = 0;
             this.cmbTemplates.SelectedIndexChanged += new System.EventHandler(this.cmbTemplates_SelectedIndexChanged);
             // 
@@ -412,10 +406,9 @@
             this.btnTemplateManage.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnTemplateManage.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Bold);
             this.btnTemplateManage.ForeColor = System.Drawing.Color.White;
-            this.btnTemplateManage.Location = new System.Drawing.Point(4, 141);
-            this.btnTemplateManage.Margin = new System.Windows.Forms.Padding(2, 3, 2, 3);
+            this.btnTemplateManage.Location = new System.Drawing.Point(5, 143);
             this.btnTemplateManage.Name = "btnTemplateManage";
-            this.btnTemplateManage.Size = new System.Drawing.Size(310, 36);
+            this.btnTemplateManage.Size = new System.Drawing.Size(304, 42);
             this.btnTemplateManage.TabIndex = 2;
             this.btnTemplateManage.Text = "模板管理 ▼";
             this.btnTemplateManage.UseVisualStyleBackColor = false;
@@ -425,62 +418,34 @@
             // 
             this.label6.AutoSize = true;
             this.label6.Font = new System.Drawing.Font("微软雅黑", 10.5F, System.Drawing.FontStyle.Bold);
-            this.label6.Location = new System.Drawing.Point(4, 184);
-            this.label6.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
+            this.label6.Location = new System.Drawing.Point(-2, 188);
             this.label6.Name = "label6";
             this.label6.Size = new System.Drawing.Size(96, 28);
             this.label6.TabIndex = 3;
             this.label6.Text = "作业步骤";
             // 
-            // panelStepImage
+            // flpMainSteps
             // 
-            this.panelStepImage.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            this.flpMainSteps.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
-            this.panelStepImage.BackColor = System.Drawing.Color.WhiteSmoke;
-            this.panelStepImage.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            this.panelStepImage.Controls.Add(this.pictureBoxStep);
-            this.panelStepImage.Controls.Add(this.lblStepTitle);
-            this.panelStepImage.Location = new System.Drawing.Point(4, 210);
-            this.panelStepImage.Margin = new System.Windows.Forms.Padding(2, 3, 2, 3);
-            this.panelStepImage.Name = "panelStepImage";
-            this.panelStepImage.Size = new System.Drawing.Size(310, 155);
-            this.panelStepImage.TabIndex = 4;
-            // 
-            // pictureBoxStep
-            // 
-            this.pictureBoxStep.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(230)))), ((int)(((byte)(230)))), ((int)(((byte)(230)))));
-            this.pictureBoxStep.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.pictureBoxStep.Location = new System.Drawing.Point(82, 0);
-            this.pictureBoxStep.Margin = new System.Windows.Forms.Padding(2, 3, 2, 3);
-            this.pictureBoxStep.Name = "pictureBoxStep";
-            this.pictureBoxStep.Size = new System.Drawing.Size(226, 153);
-            this.pictureBoxStep.SizeMode = System.Windows.Forms.PictureBoxSizeMode.Zoom;
-            this.pictureBoxStep.TabIndex = 1;
-            this.pictureBoxStep.TabStop = false;
-            // 
-            // lblStepTitle
-            // 
-            this.lblStepTitle.BackColor = System.Drawing.Color.White;
-            this.lblStepTitle.Dock = System.Windows.Forms.DockStyle.Left;
-            this.lblStepTitle.Font = new System.Drawing.Font("微软雅黑", 10.5F);
-            this.lblStepTitle.Location = new System.Drawing.Point(0, 0);
-            this.lblStepTitle.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
-            this.lblStepTitle.Name = "lblStepTitle";
-            this.lblStepTitle.Padding = new System.Windows.Forms.Padding(8, 9, 0, 0);
-            this.lblStepTitle.Size = new System.Drawing.Size(82, 153);
-            this.lblStepTitle.TabIndex = 0;
-            this.lblStepTitle.Text = "步骤 1\r\n已配置模板";
+            this.flpMainSteps.AutoScroll = true;
+            this.flpMainSteps.BackColor = System.Drawing.Color.WhiteSmoke;
+            this.flpMainSteps.FlowDirection = System.Windows.Forms.FlowDirection.TopDown;
+            this.flpMainSteps.Location = new System.Drawing.Point(2, 219);
+            this.flpMainSteps.Name = "flpMainSteps";
+            this.flpMainSteps.Size = new System.Drawing.Size(317, 364);
+            this.flpMainSteps.TabIndex = 4;
+            this.flpMainSteps.WrapContents = false;
             // 
             // panelMesStatus
             // 
-            this.panelMesStatus.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
-            | System.Windows.Forms.AnchorStyles.Right)));
             this.panelMesStatus.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(255)))), ((int)(((byte)(224)))), ((int)(((byte)(224)))));
             this.panelMesStatus.Controls.Add(this.lblMesStatus);
-            this.panelMesStatus.Location = new System.Drawing.Point(4, 360);
-            this.panelMesStatus.Margin = new System.Windows.Forms.Padding(2, 3, 2, 3);
+            this.panelMesStatus.Dock = System.Windows.Forms.DockStyle.Bottom;
+            this.panelMesStatus.Location = new System.Drawing.Point(5, 604);
             this.panelMesStatus.Name = "panelMesStatus";
-            this.panelMesStatus.Size = new System.Drawing.Size(310, 34);
+            this.panelMesStatus.Size = new System.Drawing.Size(317, 40);
             this.panelMesStatus.TabIndex = 16;
             // 
             // lblMesStatus
@@ -489,9 +454,8 @@
             this.lblMesStatus.Font = new System.Drawing.Font("微软雅黑", 10.5F, System.Drawing.FontStyle.Bold);
             this.lblMesStatus.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(192)))), ((int)(((byte)(0)))), ((int)(((byte)(0)))));
             this.lblMesStatus.Location = new System.Drawing.Point(0, 0);
-            this.lblMesStatus.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblMesStatus.Name = "lblMesStatus";
-            this.lblMesStatus.Size = new System.Drawing.Size(310, 34);
+            this.lblMesStatus.Size = new System.Drawing.Size(317, 40);
             this.lblMesStatus.TabIndex = 0;
             this.lblMesStatus.Text = "MES上传等待执行";
             this.lblMesStatus.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
@@ -502,10 +466,10 @@
             this.lblResult.Dock = System.Windows.Forms.DockStyle.Bottom;
             this.lblResult.Font = new System.Drawing.Font("微软雅黑", 36F, System.Drawing.FontStyle.Bold);
             this.lblResult.ForeColor = System.Drawing.Color.White;
-            this.lblResult.Location = new System.Drawing.Point(4, 645);
+            this.lblResult.Location = new System.Drawing.Point(5, 644);
             this.lblResult.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblResult.Name = "lblResult";
-            this.lblResult.Size = new System.Drawing.Size(320, 71);
+            this.lblResult.Size = new System.Drawing.Size(317, 71);
             this.lblResult.TabIndex = 17;
             this.lblResult.Text = "PASS";
             this.lblResult.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
@@ -559,8 +523,6 @@
             this.statusStrip1.PerformLayout();
             this.panelRight.ResumeLayout(false);
             this.panelRight.PerformLayout();
-            this.panelStepImage.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)(this.pictureBoxStep)).EndInit();
             this.panelMesStatus.ResumeLayout(false);
             this.ResumeLayout(false);
 
@@ -597,9 +559,7 @@
         private System.Windows.Forms.Button btnStart;
         private System.Windows.Forms.Button btnStop;
         private System.Windows.Forms.Label label6;
-        private System.Windows.Forms.Panel panelStepImage;
-        private System.Windows.Forms.Label lblStepTitle;
-        private System.Windows.Forms.PictureBox pictureBoxStep;
+        private System.Windows.Forms.FlowLayoutPanel flpMainSteps;
         private System.Windows.Forms.Panel panelMesStatus;
         private System.Windows.Forms.Label lblMesStatus;
         private System.Windows.Forms.Label lblResult;
