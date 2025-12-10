@@ -161,6 +161,7 @@
     <Compile Include="Services\TemplateStorageService.cs" />
     <Compile Include="Services\VideoRecordingService.cs" />
     <Compile Include="Services\WorkflowService.cs" />
+    <Compile Include="Tools\VProTool.cs" />
     <Compile Include="ViewModels\MainViewModel.cs" />
     <Compile Include="Views\CreateTemplateWindow.cs">
       <SubType>Form</SubType>

@@ -248,6 +248,8 @@ namespace Audio900.Services
                         await Task.Delay(CHECK_DELAY);
                         continue;
                     }
+                    
+                    _logger.Info($"步骤{step.StepNumber}: 采集图像成功 Hash={currentImage.GetHashCode()}, 尺寸={currentImage.Width}x{currentImage.Height}, 检测次数={totalCheckCount}");
 
                     if (_isCameraConnected)
                     {
@@ -823,15 +825,39 @@ namespace Audio900.Services
                         // Set Input
                         if (toolBlock.Inputs.Contains("InputImage"))
                         {
-                            toolBlock.Inputs["InputImage"].Value = image;
+                            // 检查图像类型，如果是彩色图像，转换为灰度图像
+                            ICogImage inputImage = image;
+                            if (image is CogImage24PlanarColor colorImage)
+                            {
+                                try
+                                {
+                                    using (Bitmap bmp = colorImage.ToBitmap())
+                                    {
+                                        inputImage = new CogImage8Grey(bmp);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    inputImage = image;
+                                }
+                            }
+                            
+                            toolBlock.Inputs["InputImage"].Value = inputImage;
+                        }
+                        else
+                        {
                         }
                         
                         toolBlock.Run();
+                        _logger.Info($"步骤{step.StepNumber}: ToolBlock 运行完成, RunStatus={toolBlock.RunStatus.Result}, Message={toolBlock.RunStatus.Message}");
                         
                         // 1. 收集所有 Output Terminal 的值
                         foreach(CogToolBlockTerminal terminal in toolBlock.Outputs)
                         {
-                            if (terminal.Value == null) continue;
+                            if (terminal.Value == null)
+                            {
+                                continue;
+                            }
 
                             if (double.TryParse(terminal.Value.ToString(), out double val))
                             {

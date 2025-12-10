@@ -246,7 +246,7 @@ namespace Audio900.Services
                         // 更新最新帧缓存（供单次拍照使用）
                         lock (_frameLock)
                         {
-                            _latestFrame = CopyImage(cogImage);
+                            _latestFrame = CopyImage(cogImage); 
                         }
 
                         // 如果正在录制视频，直接从相机数据创建Bitmap（避免ICogImage→Bitmap转换）
@@ -542,7 +542,8 @@ namespace Audio900.Services
                 {
                     lock (_frameLock)
                     {
-                        return CopyImage(_latestFrame);
+                        var copiedImage = CopyImage(_latestFrame);
+                        return copiedImage;
                     }
                 }
                 
