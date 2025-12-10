@@ -49,6 +49,7 @@ namespace Audio900.Services
                 {
                     template.Name,
                     template.Description,
+                    template.FormatSN,
                     template.CreatedTime,
                     template.ModifiedTime,
                     StepCount = template.Steps.Count
@@ -69,6 +70,7 @@ namespace Audio900.Services
                     var stepMetadata = new
                     {
                         step.StepNumber,
+                        step.Timeout,
                         step.ShowFailurePrompt,
                         step.FailurePromptMessage,
                         step.ToolBlockPath,
@@ -146,6 +148,7 @@ namespace Audio900.Services
                 {
                     Name = metadata["Name"]?.ToString() ?? "",
                     Description = metadata["Description"]?.ToString() ?? "",
+                    FormatSN = metadata["FormatSN"]?.ToString() ?? "",
                     CreatedTime = metadata["CreatedTime"]?.ToObject<DateTime>() ?? DateTime.Now,
                     ModifiedTime = metadata["ModifiedTime"]?.ToObject<DateTime>() ?? DateTime.Now
                 };
@@ -167,6 +170,7 @@ namespace Audio900.Services
                     var step = new WorkStep
                     {
                         StepNumber = stepMetadata["StepNumber"]?.ToObject<int>() ?? 0,
+                        Timeout = stepMetadata["Timeout"]?.ToObject<int>() ?? 0,
                         ShowFailurePrompt = stepMetadata["ShowFailurePrompt"]?.ToObject<bool>() ?? false,
                         FailurePromptMessage = stepMetadata["FailurePromptMessage"]?.ToString() ?? "",
                         ToolBlockPath = stepMetadata["ToolBlockPath"]?.ToString() ?? ""

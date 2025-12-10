@@ -40,7 +40,7 @@ namespace Audio900.Views
         private void LoadTemplateData(WorkTemplate template)
         {
             txtTemplateName.Text = template.TemplateName;
-            txtProductSN.Text = template.ProductSN;
+            txtProductSN.Text = template.FormatSN;
             txtDescription.Text = template.Description;
             UpdateTemplatePath();
 
@@ -50,18 +50,17 @@ namespace Audio900.Views
 
             foreach (var step in template.WorkSteps)
             {
-                // Clone step
                 var newStep = new WorkStep
                 {
                     StepNumber = step.StepNumber,
                     Timeout = step.Timeout,
                     ShowFailurePrompt = step.ShowFailurePrompt,
+                    FailurePromptMessage = step.FailurePromptMessage,
                     Status = step.Status,
                     ToolBlockPath = step.ToolBlockPath,
                     CapturedImage = step.CapturedImage
                 };
                 
-                // Copy image source
                 if (step.ImageSource != null)
                 {
                     newStep.ImageSource = (Image)step.ImageSource.Clone();
@@ -76,7 +75,6 @@ namespace Audio900.Views
                      } catch {}
                 }
 
-                // Copy params
                 foreach(var p in step.Parameters)
                 {
                     newStep.Parameters.Add(new StepParameter { 
@@ -86,7 +84,6 @@ namespace Audio900.Views
                     });
                 }
                 
-                // If image missing in object but exists in file (common on reload)
                 if (newStep.ImageSource == null && !string.IsNullOrEmpty(_templatePath))
                 {
                     string imgPath = Path.Combine(_templatePath, $"step{step.StepNumber}_image.bmp");
@@ -195,7 +192,7 @@ namespace Audio900.Views
             CreatedTemplate = new WorkTemplate
             {
                 TemplateName = txtTemplateName.Text,
-                ProductSN = txtProductSN.Text,
+                FormatSN = txtProductSN.Text,
                 Description = txtDescription.Text,
                 Status = "已创建"
             };

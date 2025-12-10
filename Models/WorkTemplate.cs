@@ -11,7 +11,7 @@ namespace Audio900.Models
     {
         private string _templateName;
         private string _name;
-        private string _productSN;
+        private string _formatSN;
         private string _description;
         private string _status;
         private DateTime _createdTime;
@@ -41,13 +41,16 @@ namespace Audio900.Models
             }
         }
 
-        public string ProductSN
+        /// <summary>
+        /// SN格式
+        /// </summary>
+        public string FormatSN
         {
-            get => _productSN;
+            get => _formatSN;
             set
             {
-                _productSN = value;
-                OnPropertyChanged(nameof(ProductSN));
+                _formatSN = value;
+                OnPropertyChanged(nameof(FormatSN));
             }
         }
 

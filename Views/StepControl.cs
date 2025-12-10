@@ -32,7 +32,6 @@ namespace Audio900.Views
             _cameraService = cameraService;
             _templateBasePath = templateBasePath;
             
-            // Explicitly set size to ensure visibility
             this.Size = new Size(800, 250);
             
             BindData();
