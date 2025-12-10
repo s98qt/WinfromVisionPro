@@ -175,6 +175,13 @@ namespace Audio900.Services
                         ToolBlockPath = stepMetadata["ToolBlockPath"]?.ToString() ?? ""
                     };
 
+                    // 优先检查当前目录下的 toolblock.vpp，解决绝对路径失效问题
+                    string localVppPath = Path.Combine(stepFolder, "toolblock.vpp");
+                    if (File.Exists(localVppPath))
+                    {
+                        step.ToolBlockPath = localVppPath;
+                    }
+
                     // 加载采集的图像
                     string capturedImagePath = Path.Combine(stepFolder, "captured.bmp");
                     if (File.Exists(capturedImagePath))
