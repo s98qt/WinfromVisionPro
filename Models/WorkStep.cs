@@ -60,7 +60,6 @@ namespace Audio900.Models
     {
         private string _name;
         private string _status;
-        private double _scoreThreshold;
         private int _timeout;
         private bool _showFailurePrompt;
         private string _failurePromptMessage;
@@ -72,9 +71,6 @@ namespace Audio900.Models
         public WorkStep()
         {
             Parameters = new BindingList<StepParameter>();
-            // 默认添加两个示例参数
-            Parameters.Add(new StepParameter { Id = 1, Name = "匹配参数", IsEnabled = true, StandardValue = 10.0, Tolerance = 0.5 });
-            Parameters.Add(new StepParameter { Id = 2, Name = "量测参数", IsEnabled = true, StandardValue = 20.0, Tolerance = 0.5 });
         }
 
         public int StepNumber { get; set; }
@@ -110,16 +106,6 @@ namespace Audio900.Models
             {
                 _status = value;
                 OnPropertyChanged(nameof(Status));
-            }
-        }
-
-        public double ScoreThreshold
-        {
-            get => _scoreThreshold;
-            set
-            {
-                _scoreThreshold = value;
-                OnPropertyChanged(nameof(ScoreThreshold));
             }
         }
 
@@ -172,10 +158,7 @@ namespace Audio900.Models
                 _imageSource = value;
                 OnPropertyChanged(nameof(ImageSource));
             }
-        }
-        
-        // 实际匹配分数
-        public double ActualScore { get; set; }
+        }       
         
         // 完成时间
         public DateTime? CompletedTime { get; set; }
@@ -186,32 +169,9 @@ namespace Audio900.Models
         // VisionPro 工具块文件路径 (.vpp)
         public string ToolBlockPath { get; set; }
         
-        // 模板图像（ROI裁剪后的图像）
+        // 模板图像
         public ICogImage TemplateImage { get; set; }
-        
-        // 搜索区域
-        public ICogRegion SearchRegion { get; set; }
-        
-        // 模板区域
-        public ICogRegion ModelRegion { get; set; }
-        
-        // 模板图像文件路径
-        public string TemplateImagePath { get; set; }
-        
-        // 原始图像文件路径
-        public string OriginalImagePath { get; set; } 
-
-        // 基准直线参数
-        public bool HasBenchmark { get; set; }
-        /// <summary>
-        /// 基准类型：Line, Circle, Point 等
-        /// </summary>
-        public string BenchmarkType { get; set; }
-        public double BenchmarkRotation { get; set; } // 直线角度
-        public double BenchmarkX { get; set; }        // 直线原点 X / 圆心 X
-        public double BenchmarkY { get; set; }        // 直线原点 Y / 圆心 Y
-        public double BenchmarkRadius { get; set; }   // 圆半径
-
+       
         public event PropertyChangedEventHandler PropertyChanged;
 
         protected void OnPropertyChanged(string propertyName)

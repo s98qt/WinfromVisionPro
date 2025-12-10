@@ -54,7 +54,6 @@ namespace Audio900.Views
                 var newStep = new WorkStep
                 {
                     StepNumber = step.StepNumber,
-                    ScoreThreshold = step.ScoreThreshold,
                     Timeout = step.Timeout,
                     ShowFailurePrompt = step.ShowFailurePrompt,
                     Status = step.Status,
@@ -145,7 +144,6 @@ namespace Audio900.Views
                 step = new WorkStep
                 {
                     StepNumber = _tempSteps.Count + 1,
-                    ScoreThreshold = 0.8,
                     Timeout = 2000,
                     ShowFailurePrompt = false
                 };

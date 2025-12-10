@@ -230,9 +230,7 @@ namespace Audio900.Services
                 int totalCheckCount = 0;
                 const int MAX_TOTAL_CHECKS = 50;  // 总检测次数上限
                 const int CHECK_DELAY = 30;         // 每次检测间隔
-                
-                _logger.Info($"步骤{step.StepNumber}: 开始检测循环，需要图像稳定且匹配分数≥{step.ScoreThreshold}");
-                
+                                
                 // 主检测循环：同时检测稳定性和匹配分数
                 while (!stepPassed && totalCheckCount < MAX_TOTAL_CHECKS)
                 {
@@ -311,7 +309,6 @@ namespace Audio900.Services
                         await UpdateStepImage(step, validImage);
                         UpdateStatus($"步骤{step.StepNumber}: 检测通过");
                         
-                        step.ActualScore = score;
                         step.CompletedTime = DateTime.Now;
                         
                         _logger.Info($"步骤{step.StepNumber}: 检测通过 - {inspection.Reason}, 总检测次数={totalCheckCount}");
@@ -888,15 +885,7 @@ namespace Audio900.Services
                             return (true, "参数检测通过", results);
                         }
                         else
-                        {
-                            // 回退逻辑：如果未定义任何参数，则检查是否有 "Score" 且 >= ScoreThreshold
-                            if (results.ContainsKey("Score"))
-                            {
-                                double score = results["Score"];
-                                if (score >= step.ScoreThreshold) return (true, $"分数达标({score:F3})", results);
-                                else return (false, $"分数不足: {score:F3} < {step.ScoreThreshold}", results);
-                            }
-                            
+                        {                            
                             // 既无参数也无Score，仅判断工具运行状态
                             if (toolBlock.RunStatus.Result == CogToolResultConstants.Accept)
                                 return (true, "工具运行成功(无参数检查)", results);

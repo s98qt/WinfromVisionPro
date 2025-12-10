@@ -33,7 +33,7 @@ namespace Audio900.Views
             this.tlpMain = new System.Windows.Forms.TableLayoutPanel();
             this.panelLeft = new System.Windows.Forms.Panel();
             this.btnDeleteStep = new System.Windows.Forms.Button();
-            this.btnAddParam = new System.Windows.Forms.Button();
+            this.txtFailureMessage = new System.Windows.Forms.TextBox();
             this.dgvParams = new System.Windows.Forms.DataGridView();
             this.chkShowPrompt = new System.Windows.Forms.CheckBox();
             this.txtTimeout = new System.Windows.Forms.TextBox();
@@ -79,7 +79,7 @@ namespace Audio900.Views
             // panelLeft
             // 
             this.panelLeft.Controls.Add(this.btnDeleteStep);
-            this.panelLeft.Controls.Add(this.btnAddParam);
+            this.panelLeft.Controls.Add(this.txtFailureMessage);
             this.panelLeft.Controls.Add(this.dgvParams);
             this.panelLeft.Controls.Add(this.chkShowPrompt);
             this.panelLeft.Controls.Add(this.txtTimeout);
@@ -106,17 +106,14 @@ namespace Audio900.Views
             this.btnDeleteStep.UseVisualStyleBackColor = false;
             this.btnDeleteStep.Click += new System.EventHandler(this.btnDeleteStep_Click);
             // 
-            // btnAddParam
+            // txtFailureMessage
             // 
-            this.btnAddParam.BackColor = System.Drawing.Color.LightBlue;
-            this.btnAddParam.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnAddParam.Location = new System.Drawing.Point(9, 271);
-            this.btnAddParam.Margin = new System.Windows.Forms.Padding(6, 5, 6, 5);
-            this.btnAddParam.Name = "btnAddParam";
-            this.btnAddParam.Size = new System.Drawing.Size(612, 44);
-            this.btnAddParam.TabIndex = 6;
-            this.btnAddParam.Text = "+ 增加参数";
-            this.btnAddParam.UseVisualStyleBackColor = false;
+            this.txtFailureMessage.Location = new System.Drawing.Point(240, 102);
+            this.txtFailureMessage.Margin = new System.Windows.Forms.Padding(6, 5, 6, 5);
+            this.txtFailureMessage.Name = "txtFailureMessage";
+            this.txtFailureMessage.Size = new System.Drawing.Size(381, 31);
+            this.txtFailureMessage.TabIndex = 8;
+            this.txtFailureMessage.TextChanged += new System.EventHandler(this.txtFailureMessage_TextChanged);
             // 
             // dgvParams
             // 
@@ -129,7 +126,7 @@ namespace Audio900.Views
             this.dgvParams.RowHeadersVisible = false;
             this.dgvParams.RowHeadersWidth = 72;
             this.dgvParams.RowTemplate.Height = 23;
-            this.dgvParams.Size = new System.Drawing.Size(612, 122);
+            this.dgvParams.Size = new System.Drawing.Size(612, 175);
             this.dgvParams.TabIndex = 5;
             // 
             // chkShowPrompt
@@ -218,7 +215,7 @@ namespace Audio900.Views
         private System.Windows.Forms.TextBox txtTimeout;
         private System.Windows.Forms.CheckBox chkShowPrompt;
         private System.Windows.Forms.DataGridView dgvParams;
-        private System.Windows.Forms.Button btnAddParam;
+        private System.Windows.Forms.TextBox txtFailureMessage;
         private System.Windows.Forms.Button btnDeleteStep;
         private System.Windows.Forms.PictureBox pictureBoxPreview;
     }

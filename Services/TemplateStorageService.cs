@@ -23,7 +23,7 @@ namespace Audio900.Services
         public TemplateStorageService()
         {
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            _templatesDirectory = Path.Combine(baseDir, "Templates");
+            _templatesDirectory = Path.Combine(baseDir, "HomeworkTemplate");
             Directory.CreateDirectory(_templatesDirectory);
         }
 
@@ -69,10 +69,10 @@ namespace Audio900.Services
                     var stepMetadata = new
                     {
                         step.StepNumber,
-                        step.ScoreThreshold,
                         step.ShowFailurePrompt,
                         step.FailurePromptMessage,
-                        step.ToolBlockPath
+                        step.ToolBlockPath,
+                        step.Parameters
                     };
                     
                     string stepMetadataJson = JsonConvert.SerializeObject(stepMetadata, Formatting.Indented);
@@ -92,12 +92,10 @@ namespace Audio900.Services
                         SaveICogImageAsImage(step.TemplateImage, templateImagePath);
                     }
 
-                    // 保存ToolBlock（如果有）
                     if (!string.IsNullOrEmpty(step.ToolBlockPath) && File.Exists(step.ToolBlockPath))
                     {
-                        string toolBlockDestPath = Path.Combine(stepFolder, "toolblock.vpp");
+                        string toolBlockDestPath = Path.Combine(stepFolder, "task.vpp");
                         
-                        // 检查源路径和目标路径是否相同，避免自我复制导致IO异常
                         string fullSourcePath = Path.GetFullPath(step.ToolBlockPath);
                         string fullDestPath = Path.GetFullPath(toolBlockDestPath);
                         
@@ -169,14 +167,20 @@ namespace Audio900.Services
                     var step = new WorkStep
                     {
                         StepNumber = stepMetadata["StepNumber"]?.ToObject<int>() ?? 0,
-                        ScoreThreshold = stepMetadata["ScoreThreshold"]?.ToObject<double>() ?? 0.8,
                         ShowFailurePrompt = stepMetadata["ShowFailurePrompt"]?.ToObject<bool>() ?? false,
                         FailurePromptMessage = stepMetadata["FailurePromptMessage"]?.ToString() ?? "",
                         ToolBlockPath = stepMetadata["ToolBlockPath"]?.ToString() ?? ""
                     };
 
+                    // 加载参数列表
+                    var parameters = stepMetadata["Parameters"]?.ToObject<System.ComponentModel.BindingList<StepParameter>>();
+                    if (parameters != null)
+                    {
+                        step.Parameters = parameters;
+                    }
+
                     // 优先检查当前目录下的 toolblock.vpp，解决绝对路径失效问题
-                    string localVppPath = Path.Combine(stepFolder, "toolblock.vpp");
+                    string localVppPath = Path.Combine(stepFolder, "task.vpp");
                     if (File.Exists(localVppPath))
                     {
                         step.ToolBlockPath = localVppPath;

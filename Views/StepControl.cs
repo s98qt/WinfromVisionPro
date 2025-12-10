@@ -50,6 +50,7 @@ namespace Audio900.Views
             groupBoxStep.Text = $"作业步骤 {Step.StepNumber}";
             txtTimeout.Text = Step.Timeout.ToString();
             chkShowPrompt.Checked = Step.ShowFailurePrompt;
+            txtFailureMessage.Text = Step.FailurePromptMessage;
             
             if (Step.ImageSource != null)
             {
@@ -61,9 +62,9 @@ namespace Audio900.Views
         {
             dgvParams.AutoGenerateColumns = false;
             dgvParams.Columns.Clear();
-            dgvParams.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "名称", DataPropertyName = "Name", Width = 80 });
+            dgvParams.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "名称", DataPropertyName = "Name", Width = 80, ReadOnly = true });
             dgvParams.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "启用", DataPropertyName = "IsEnabled", Width = 40 });
-            dgvParams.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "标准值", DataPropertyName = "StandardValue", Width = 60, ReadOnly = true });
+            dgvParams.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "标准值", DataPropertyName = "StandardValue", Width = 60 });
             dgvParams.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "公差", DataPropertyName = "Tolerance", Width = 60 });
             
             var deleteBtn = new DataGridViewButtonColumn();
@@ -76,10 +77,17 @@ namespace Audio900.Views
             dgvParams.DataSource = Step.Parameters;
             
             dgvParams.CellClick += DgvParams_CellClick;
-            btnAddParam.Click += BtnAddParam_Click;
             
             txtTimeout.TextChanged += (s, e) => { if (int.TryParse(txtTimeout.Text, out int val)) Step.Timeout = val; };
             chkShowPrompt.CheckedChanged += (s, e) => Step.ShowFailurePrompt = chkShowPrompt.Checked;
+        }
+
+        private void txtFailureMessage_TextChanged(object sender, EventArgs e)
+        {
+            if (Step != null)
+            {
+                Step.FailurePromptMessage = txtFailureMessage.Text;
+            }
         }
 
         private void DgvParams_CellClick(object sender, DataGridViewCellEventArgs e)
@@ -88,19 +96,6 @@ namespace Audio900.Views
              {
                  Step.Parameters.RemoveAt(e.RowIndex);
              }
-        }
-
-        private void BtnAddParam_Click(object sender, EventArgs e)
-        {
-             int nextId = Step.Parameters.Count + 1;
-             Step.Parameters.Add(new StepParameter 
-             { 
-                 Id = nextId, 
-                 Name = $"参数{nextId}", 
-                 IsEnabled = true, 
-                 StandardValue = 0.0, 
-                 Tolerance = 0.5 
-             });
         }
 
         private async void btnCapture_Click(object sender, EventArgs e)
@@ -253,6 +248,9 @@ namespace Audio900.Views
                              // 运行一次以获取最新值（标准值）
                              toolBlock.Run();
                              
+                             // 收集所有有效的输出参数名称
+                             var validOutputNames = new System.Collections.Generic.HashSet<string>();
+
                              foreach (CogToolBlockTerminal terminal in toolBlock.Outputs)
                              {
                                  if (terminal.Value == null) continue;
@@ -260,6 +258,8 @@ namespace Audio900.Views
                                  // 只处理数值类型的输出
                                  if (double.TryParse(terminal.Value.ToString(), out double val))
                                  {
+                                     validOutputNames.Add(terminal.Name);
+                                     
                                      var existingParam = Step.Parameters.FirstOrDefault(p => p.Name == terminal.Name);
                                      if (existingParam != null)
                                      {
@@ -280,6 +280,17 @@ namespace Audio900.Views
                                      }
                                  }
                              }
+
+                             // 删除不再存在的参数（反向遍历删除）
+                             for (int i = Step.Parameters.Count - 1; i >= 0; i--)
+                             {
+                                 if (!validOutputNames.Contains(Step.Parameters[i].Name))
+                                 {
+                                     Step.Parameters.RemoveAt(i);
+                                 }
+                             }
+
+                             // 刷新界面
                              // 刷新界面
                              // BindingList 会自动通知 DataGridView 更新，但重置 DataSource 更可靠
                              dgvParams.DataSource = null;
