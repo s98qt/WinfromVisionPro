@@ -79,12 +79,8 @@ namespace Audio900
                     return;
                 }
 
-                // 自动启动作业流程
-                // 相当于调用 btnStart_Click 的逻辑
-                if (!_isWorkflowRunning)
-                {
-                    btnStart_Click(sender, e);
-                }
+                btnStart_Click(sender, e);
+                
             }
         }
 
@@ -412,12 +408,11 @@ namespace Audio900
                 return;
             }
             
-            // Find the panel for this step and highlight it
             foreach(Control ctrl in flpMainSteps.Controls)
             {
                 if (ctrl is Panel p && p.Tag == step)
                 {
-                    p.BackColor = Color.LightGreen; // Highlight completed
+                    p.BackColor = Color.FromArgb(76, 175, 80); // 检测通过绿色,和主界面总结果保持一样
                     flpMainSteps.ScrollControlIntoView(p);
                     break;
                 }
@@ -431,8 +426,16 @@ namespace Audio900
                 Invoke(new Action<string, Color>(OnWorkflowRecordingStatusChanged), status, color);
                 return;
             }
+
             // 显示录制状态
-            UpdateStatus(status);
+            if (InvokeRequired)
+            {
+                Invoke(new Action<string>(UpdateStatus), status);
+                return;
+            }
+
+            lblCameraVideoStatus.Text = $"{status}";
+            lblCameraVideoStatus.BackColor = color;
         }
 
         /// <summary>

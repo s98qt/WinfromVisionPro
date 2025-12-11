@@ -43,7 +43,7 @@
             this.txtFileName = new System.Windows.Forms.TextBox();
             this.panelTop = new System.Windows.Forms.Panel();
             this.btnOpenCamera = new System.Windows.Forms.Button();
-            this.lblCameraStatus = new System.Windows.Forms.Label();
+            this.lblCameraVideoStatus = new System.Windows.Forms.Label();
             this.lblImageArea = new System.Windows.Forms.Label();
             this.splitContainer1 = new System.Windows.Forms.SplitContainer();
             this.panelCameraDisplay = new System.Windows.Forms.Panel();
@@ -245,7 +245,7 @@
             // 
             this.panelTop.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(33)))), ((int)(((byte)(150)))), ((int)(((byte)(243)))));
             this.panelTop.Controls.Add(this.btnOpenCamera);
-            this.panelTop.Controls.Add(this.lblCameraStatus);
+            this.panelTop.Controls.Add(this.lblCameraVideoStatus);
             this.panelTop.Controls.Add(this.lblImageArea);
             this.panelTop.Dock = System.Windows.Forms.DockStyle.Top;
             this.panelTop.Location = new System.Drawing.Point(0, 0);
@@ -260,7 +260,7 @@
             this.btnOpenCamera.BackColor = System.Drawing.Color.White;
             this.btnOpenCamera.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnOpenCamera.Font = new System.Drawing.Font("微软雅黑", 10.5F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
-            this.btnOpenCamera.Location = new System.Drawing.Point(1196, 6);
+            this.btnOpenCamera.Location = new System.Drawing.Point(1149, 4);
             this.btnOpenCamera.Margin = new System.Windows.Forms.Padding(0);
             this.btnOpenCamera.Name = "btnOpenCamera";
             this.btnOpenCamera.Size = new System.Drawing.Size(161, 45);
@@ -269,20 +269,20 @@
             this.btnOpenCamera.UseVisualStyleBackColor = false;
             this.btnOpenCamera.Click += new System.EventHandler(this.btnOpenCamera_Click);
             // 
-            // lblCameraStatus
+            // lblCameraVideoStatus
             // 
-            this.lblCameraStatus.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.lblCameraStatus.BackColor = System.Drawing.Color.Red;
-            this.lblCameraStatus.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            this.lblCameraStatus.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
-            this.lblCameraStatus.ForeColor = System.Drawing.Color.White;
-            this.lblCameraStatus.Location = new System.Drawing.Point(1359, 9);
-            this.lblCameraStatus.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
-            this.lblCameraStatus.Name = "lblCameraStatus";
-            this.lblCameraStatus.Size = new System.Drawing.Size(155, 39);
-            this.lblCameraStatus.TabIndex = 1;
-            this.lblCameraStatus.Text = "相机等待连接";
-            this.lblCameraStatus.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
+            this.lblCameraVideoStatus.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.lblCameraVideoStatus.BackColor = System.Drawing.Color.Red;
+            this.lblCameraVideoStatus.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+            this.lblCameraVideoStatus.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
+            this.lblCameraVideoStatus.ForeColor = System.Drawing.Color.White;
+            this.lblCameraVideoStatus.Location = new System.Drawing.Point(1334, 10);
+            this.lblCameraVideoStatus.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
+            this.lblCameraVideoStatus.Name = "lblCameraVideoStatus";
+            this.lblCameraVideoStatus.Size = new System.Drawing.Size(155, 39);
+            this.lblCameraVideoStatus.TabIndex = 1;
+            this.lblCameraVideoStatus.Text = "视频等待录制";
+            this.lblCameraVideoStatus.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
             // 
             // lblImageArea
             // 
@@ -538,7 +538,7 @@
 
         private System.Windows.Forms.Panel panelTop;
         private System.Windows.Forms.Label lblImageArea;
-        private System.Windows.Forms.Label lblCameraStatus;
+        private System.Windows.Forms.Label lblCameraVideoStatus;
         private System.Windows.Forms.Button btnOpenCamera;
         private System.Windows.Forms.SplitContainer splitContainer1;
         private System.Windows.Forms.Panel panelCameraDisplay;

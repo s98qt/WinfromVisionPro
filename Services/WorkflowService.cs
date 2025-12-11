@@ -101,8 +101,8 @@ namespace Audio900.Services
                 
                 RecordingStatusChanged?.Invoke("视频正在录制中...", Color.Red);
                 
-                // 初始化总体结果为 OK
-                OverallResultChanged?.Invoke("PASS");
+                // 初始化总体结果为空
+                OverallResultChanged?.Invoke("");
                 // 1. 开始录制视频
                 _videoRecordingService.StartRecording(
                     productSN, 
@@ -120,8 +120,6 @@ namespace Audio900.Services
                         _currentTemplate.TemplateName
                     );
                     
-                    _logger.Info($"开始从文件重新加载模板数据...");
-                    
                     _stepToolBlocks.Clear();
                     
                     foreach (var step in _currentTemplate.WorkSteps)
@@ -138,7 +136,6 @@ namespace Audio900.Services
                                 if (tb != null)
                                 {
                                     _stepToolBlocks[step.StepNumber] = tb;
-                                    _logger.Info($"步骤 {step.StepNumber}: Loaded ToolBlock from {step.ToolBlockPath}");
                                 }
                             }
                             catch (Exception ex)
@@ -160,7 +157,6 @@ namespace Audio900.Services
                         }
                     }
                     
-                    _logger.Info($"模板数据重新加载完成");
                 }
                 
                 UpdateStatus($"已加载模板: {_currentTemplate?.TemplateName}");
@@ -191,7 +187,6 @@ namespace Audio900.Services
                 // 检查所有步骤状态，确认最终结果
                 bool allPassed = _currentTemplate.WorkSteps.All(s => s.Status == "检测通过");
                 OverallResultChanged?.Invoke(allPassed ? "PASS" : "FAIL");
-                _logger.Info($"【作业流程完成】总体结果: {(allPassed ? "PASS" : "FAIL")}");
                 
                 // 2. 停止录制视频
                 _videoRecordingService.StopRecording();
@@ -268,8 +263,7 @@ namespace Audio900.Services
                         }
                     }
                                       
-                    // 图像稳定，进入步骤3：模板匹配检测
-                    UpdateStatus($"步骤{step.StepNumber}: 图像稳定，正在进行模板匹配...");
+                    UpdateStatus($"步骤{step.StepNumber}: 图像稳定，视觉检测中...");
                     await ChangeState(WorkflowState.CheckingScore);
                     
                     // 执行视觉检测（包含参数公差比对）
@@ -280,9 +274,6 @@ namespace Audio900.Services
                     if (inspection.Passed)
                     {
                         stepPassed = true;
-
-                        // 尝试获取分数用于显示
-                        double score = inspection.Results.ContainsKey("Score") ? inspection.Results["Score"] : 1.0;
 
                         // 构建保存路径（使用固定的 D 盘路径）
                         string baseFolder = @"D:\data\ZIPImg";
@@ -310,16 +301,12 @@ namespace Audio900.Services
                         UpdateStatus($"步骤{step.StepNumber}: 检测通过");
                         
                         step.CompletedTime = DateTime.Now;
-                        
-                        _logger.Info($"步骤{step.StepNumber}: 检测通过 - {inspection.Reason}, 总检测次数={totalCheckCount}");
                         OnStepCompleted?.Invoke(step);
                     }
                     else
                     {
                         // 图像稳定但检测失败，释放图像并重新采集
-                        UpdateStatus($"步骤{step.StepNumber}: 检测失败 - {inspection.Reason}，重新采集...");
-                        _logger.Debug($"步骤{step.StepNumber}: 检测失败 - {inspection.Reason}, 继续检测...");
-                        
+                        UpdateStatus($"步骤{step.StepNumber}: 检测失败 - {inspection.Reason}，重新采集...");                        
                         // 重置稳定性检测状态，准备下一次采集
                         ResetStabilityCheck();
                         await Task.Delay(CHECK_DELAY);
@@ -331,12 +318,11 @@ namespace Audio900.Services
                 {
                     UpdateStepStatus(step, "检测失败");
                     UpdateStatus($"步骤{step.StepNumber}: 检测超时，已尝试{totalCheckCount}次");
-                    _logger.Warn($"步骤{step.StepNumber}: 检测超时 - 总检测次数={totalCheckCount}");
                     
                     // 步骤失败，设置总体结果为 NG
                     OverallResultChanged?.Invoke("FAIL");
                     
-                    step.FailureReason = $"检测超时: 已尝试{totalCheckCount}次，未能同时满足稳定性和匹配分数条件";
+                    step.FailureReason = $"检测超时: 已尝试{totalCheckCount}次，未能同时满足稳定性和匹配条件";
                     
                     // 根据配置决定是否提示用户
                     if (step.ShowFailurePrompt)
@@ -345,10 +331,8 @@ namespace Audio900.Services
                             ? $"步骤{step.StepNumber}检测失败！\n\n{step.FailureReason}" 
                             : step.FailurePromptMessage;
                         
-                        // 使用 WinForms MessageBox
                         MessageBox.Show(promptMessage, "检测失败提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         
-                        _logger.Info($"步骤{step.StepNumber}: 已向用户显示失败提示");
                     }
                     
                     ResetStabilityCheck();
@@ -360,7 +344,6 @@ namespace Audio900.Services
                 UpdateStatus($"步骤{step.StepNumber}: 执行异常 - {ex.Message}");
                 _logger.Error(ex, $"步骤{step.StepNumber}: 执行异常");
                 
-                // 步骤异常，设置总体结果为 NG
                 OverallResultChanged?.Invoke("FAIL");
                 
                 step.FailureReason = $"执行异常: {ex.Message}";
@@ -373,8 +356,6 @@ namespace Audio900.Services
                         : step.FailurePromptMessage;
                     
                     MessageBox.Show(promptMessage, "检测失败提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    
-                    _logger.Info($"步骤{step.StepNumber}: 已向用户显示失败提示（异常情况）");
                 }
             }
         }
@@ -819,36 +800,29 @@ namespace Audio900.Services
 
                     lock (toolBlock)
                     {
-                        // Set Input
                         if (toolBlock.Inputs.Contains("InputImage"))
                         {
-                            // 检查图像类型，如果是彩色图像，转换为灰度图像
+                            // 检查图像类型，在VisionPro里面转换为灰度图像
                             ICogImage inputImage = image;
-                            if (image is CogImage24PlanarColor colorImage)
-                            {
-                                try
-                                {
-                                    using (Bitmap bmp = colorImage.ToBitmap())
-                                    {
-                                        inputImage = new CogImage8Grey(bmp);
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    inputImage = image;
-                                }
-                            }
+                            //if (image is CogImage24PlanarColor colorImage)
+                            //{
+                            //    try
+                            //    {
+                            //        using (Bitmap bmp = colorImage.ToBitmap())
+                            //        {
+                            //            inputImage = new CogImage8Grey(bmp);
+                            //        }
+                            //    }
+                            //    catch (Exception ex)
+                            //    {
+                            //        inputImage = image;
+                            //    }
+                            //}
                             
                             toolBlock.Inputs["InputImage"].Value = inputImage;
                         }
-                        else
-                        {
-                        }
                         
-                        toolBlock.Run();
-                        _logger.Info($"步骤{step.StepNumber}: ToolBlock 运行完成, RunStatus={toolBlock.RunStatus.Result}, Message={toolBlock.RunStatus.Message}");
-                        
-                        // 1. 收集所有 Output Terminal 的值
+                        toolBlock.Run();                        
                         foreach(CogToolBlockTerminal terminal in toolBlock.Outputs)
                         {
                             if (terminal.Value == null)
