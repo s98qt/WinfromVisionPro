@@ -125,6 +125,9 @@ namespace Audio900.Services
         /// </summary>
         public static int GetCameraCount()
         {
+            int totalCount = 0;
+
+            // 1. 检测 iCam (1000系列)
             try
             {
                 lock (_sdkLock)
@@ -136,19 +139,28 @@ namespace Audio900.Services
                         _isSdkInitialized = true;
                     }
                 }
-                
-                // 如果是iCam相机，返回检测到的数量
-                if (_camCount > 0) return _camCount;
-                
-                // 如果没有检测到iCam，可能是UVC相机，默认尝试1个
-                // 或者如果有更高级的UVC检测逻辑可以在这里添加
-                return 1;
+                if (_camCount > 0) totalCount += _camCount;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // 发生异常时保守返回1
-                return 1;
+                System.Diagnostics.Debug.WriteLine($"iCam detection failed: {ex.Message}");
             }
+
+            // 2. 检测 UVC (1960系列)
+            try
+            {
+                int uvcCount = 0;
+                // 尝试获取 UVC 设备数量。
+                DllFunction.UVC_GetTotalDeviceNum(IntPtr.Zero, ref uvcCount);
+                if (uvcCount > 0) totalCount += uvcCount;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"UVC detection failed: {ex.Message}");
+            }
+
+            // 如果两种都没检测到，默认返回1（保底）
+            return totalCount > 0 ? totalCount : 1;
         }
 
         /// <summary>
