@@ -31,7 +31,7 @@ namespace Audio900
         
         // 当前模板和步骤
         private WorkTemplate _currentTemplate;
-        private List<CogDisplay> _cogDisplays = new List<CogDisplay>();
+        private List<CogRecordDisplay> _cogDisplays = new List<CogRecordDisplay>();
         
         // 状态标志
         private bool _isWorkflowRunning = false;
@@ -47,6 +47,13 @@ namespace Audio900
 
             // 绑定扫码枪事件
             txtProductSN.KeyDown += txtProductSN_KeyDown;
+        }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            // 移动到OnShown以确保ActiveX控件初始化时窗口句柄已创建
+            InitializeMultiCameraUI();
         }
 
         /// <summary>
@@ -125,8 +132,12 @@ namespace Audio900
                 // 加载模板列表
                 LoadTemplates();
                 
-                // 初始化相机
-                await InitializeCameras();
+                // 初始化多相机界面 (替代旧的 InitializeCameras)
+                // InitializeMultiCameraUI 已经在构造函数中调用，这里不需要再次调用，或者可以移到这里
+                // 但由于它是 async 的，构造函数里调用是 fire-and-forget。
+                // 稳妥起见，我们在构造函数里不做，改在这里做，或者保持现状。
+                // 之前的代码在构造函数里加了 InitializeMultiCameraUI()调用。
+                // 让我们确认一下构造函数。
                 
                 // 初始化工作流服务
                 InitializeWorkflow();
@@ -140,117 +151,86 @@ namespace Audio900
             }
         }
 
-
-        /// <summary>
-        /// 加载模板列表
-        /// </summary>
-        private void LoadTemplates()
+        private async void InitializeMultiCameraUI()
         {
             try
             {
-                var templateNames = _templateStorageService.GetAllTemplateNames();
-                cmbTemplates.Items.Clear();
+                // 初始化相机（自动检测）
+                int cameraCount = await _multiCameraManager.InitializeCameras(this);
                 
-                foreach (var name in templateNames)
-                {
-                    cmbTemplates.Items.Add(name);
-                }
-                
-                if (cmbTemplates.Items.Count > 0)
-                {
-                    cmbTemplates.SelectedIndex = 0;
-                }
-                
-                LoggerService.Info($"已加载 {templateNames.Count} 个模板");
-            }
-            catch (Exception ex)
-            {
-                LoggerService.Error(ex, "加载模板列表失败");
-            }
-        }
-
-        /// <summary>
-        /// 初始化相机
-        /// </summary>
-        private async Task InitializeCameras()
-        {
-            try
-            {
-                UpdateStatus("正在初始化相机...");
-                
-                // 初始化第一个相机
-                _cameraService = new CameraService(0);
-                _cameraService.SetVideoRecordingService(_videoRecordingService);
-                
-                bool success = await _cameraService.InitializeCamera(this);
-                
-                if (success)
-                {
-                    // 创建相机显示控件
-                    CreateCameraDisplay();
-                    
-                    // 订阅图像更新事件
-                    _cameraService.ImageCaptured += OnCameraImageCaptured;
-                    
-                    // 启动相机采集
-                    _cameraService.StartCapture();
-                    
-                    lblNoCamera.Visible = false;
-                    UpdateStatus("相机初始化成功");
-                    LoggerService.Info("相机初始化成功");
-                }
-                else
+                if (cameraCount == 0)
                 {
                     lblNoCamera.Visible = true;
-                    UpdateStatus("未检测到相机");
-                    LoggerService.Warn("未检测到相机");
+                    lblNoCamera.Text = "未检测到相机";
+                    return;
                 }
-            }
-            catch (Exception ex)
-            {
-                lblNoCamera.Visible = true;
-                UpdateStatus($"相机初始化失败: {ex.Message}");
-                LoggerService.Error(ex, "相机初始化失败");
-            }
-        }
-
-        /// <summary>
-        /// 创建相机显示控件
-        /// </summary>
-        private void CreateCameraDisplay()
-        {
-            try
-            {
+                
+                lblNoCamera.Visible = false;
                 panelCameraDisplay.Controls.Clear();
                 _cogDisplays.Clear();
-                
-                // 创建CogDisplay控件
-                var cogDisplay = new CogDisplay
+
+                // 创建布局容器
+                var tlp = new TableLayoutPanel
                 {
-                    Dock = DockStyle.Fill
+                    Dock = DockStyle.Fill,
+                    ColumnCount = cameraCount,
+                    RowCount = 1
                 };
+
+                panelCameraDisplay.Controls.Add(tlp);
+                for (int i = 0; i < cameraCount; i++)
+                {
+                    tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / cameraCount));
+                    
+                    var display = new CogRecordDisplay
+                    {
+                        Dock = DockStyle.Fill,
+                        BackColor = Color.Black
+                    };
+                    
+                    // 先添加到父容器，确保ActiveX控件初始化
+                    tlp.Controls.Add(display, i, 0);
+                   
+                    display.HorizontalScrollBar = false;
+                    display.VerticalScrollBar = false;
+                    _cogDisplays.Add(display);
+                }
                 
-                panelCameraDisplay.Controls.Add(cogDisplay);
-                _cogDisplays.Add(cogDisplay);
                 
-                LoggerService.Info("相机显示控件创建成功");
+                
+                // 订阅多相机事件
+                _multiCameraManager.ImageCaptured += OnCameraImageCaptured;
+                _multiCameraManager.StartAllCameras();
             }
             catch (Exception ex)
             {
-                LoggerService.Error(ex, "创建相机显示控件失败");
+                LoggerService.Error(ex, "初始化多相机界面失败");
+                MessageBox.Show($"相机初始化失败: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// 相机图像更新事件处理
+        /// 相机图像捕获事件处理
         /// </summary>
-        private void OnCameraImageCaptured(object sender, ICogImage image)
+        private void OnCameraImageCaptured(object sender, CameraImageEventArgs e)
         {
             try
             {
-                if (_cogDisplays.Count > 0 && image != null)
+                if (e.CameraIndex >= 0 && e.CameraIndex < _cogDisplays.Count && e.Image != null)
                 {
-                    _cogDisplays[0].Image = image;
+                    // 在 UI 线程更新图像
+                    if (InvokeRequired)
+                    {
+                        Invoke(new Action<object, CameraImageEventArgs>(OnCameraImageCaptured), sender, e);
+                        return;
+                    }
+
+                    var display = _cogDisplays[e.CameraIndex];
+                    // 使用 RecordDisplay 的 Image 属性，或者 Record 属性
+                    // CogRecordDisplay 显示图像通常设置 Image 属性，或设置 Record
+                    // 为了简单显示，设置 Image 即可
+                    display.Image = e.Image;
+                    display.Fit(true); // 适应窗口大小
                 }
             }
             catch (Exception ex)
@@ -283,6 +263,34 @@ namespace Audio900
             {
                 MessageBox.Show($"加载模板失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 LoggerService.Error(ex, "加载模板失败");
+            }
+        }
+
+        /// <summary>
+        /// 加载模板列表
+        /// </summary>
+        private void LoadTemplates()
+        {
+            try
+            {
+                var templateNames = _templateStorageService.GetAllTemplateNames();
+                cmbTemplates.Items.Clear();
+                
+                foreach (var name in templateNames)
+                {
+                    cmbTemplates.Items.Add(name);
+                }
+                
+                if (cmbTemplates.Items.Count > 0)
+                {
+                    cmbTemplates.SelectedIndex = 0;
+                }
+                
+                LoggerService.Info($"已加载 {templateNames.Count} 个模板");
+            }
+            catch (Exception ex)
+            {
+                LoggerService.Error(ex, "加载模板列表失败");
             }
         }
 
@@ -389,10 +397,12 @@ namespace Audio900
             if (result == "PASS")
             {
                 lblResult.BackColor = Color.FromArgb(76, 175, 80); // Green
+                DrawResultGraphic(true);
             }
             else if (result == "FAIL")
             {
                 lblResult.BackColor = Color.Red;
+                DrawResultGraphic(false);
             }
             else
             {
@@ -439,11 +449,56 @@ namespace Audio900
         }
 
         /// <summary>
+        /// 绘制结果框
+        /// </summary>
+        private void DrawResultGraphic(bool isPass)
+        {
+            try 
+            {
+                var color = isPass ? CogColorConstants.Green : CogColorConstants.Red;
+                
+                foreach(var display in _cogDisplays)
+                {
+                    // 清除之前的图形
+                    display.StaticGraphics.Clear();
+                    
+                    // 创建一个覆盖全图的矩形框
+                    // 注意：这需要有图像才能获取宽高。如果没图像，就不画。
+                    if (display.Image != null)
+                    {
+                        var rect = new CogRectangle();
+                        // VisionPro 坐标系原点通常在左上角，CenterX/Y 是矩形中心
+                        rect.SetCenterWidthHeight(
+                            display.Image.Width / 2.0, 
+                            display.Image.Height / 2.0, 
+                            display.Image.Width, 
+                            display.Image.Height);
+                        rect.Color = color;
+                        rect.LineWidthInScreenPixels = 10; // 线宽加粗以便明显
+                        
+                        // 添加到显示控件
+                        display.StaticGraphics.Add(rect, "ResultBox");
+                    }
+                }
+            }
+            catch(Exception ex)
+            {
+                LoggerService.Error(ex, "绘制结果框失败");
+            }
+        }
+
+        /// <summary>
         /// 打开相机按钮点击
         /// </summary>
         private void btnOpenCamera_Click(object sender, EventArgs e)
         {
-            Task.Run(async () => await InitializeCameras());
+            Task.Run(async () => 
+            {
+                if (InvokeRequired)
+                    Invoke(new Action(InitializeMultiCameraUI));
+                else
+                    InitializeMultiCameraUI();
+            });
         }
 
         /// <summary>
@@ -455,7 +510,7 @@ namespace Audio900
             if (_currentTemplate != null)
             {
                 var result = MessageBox.Show(
-                    $"是否编辑当前模板 '{_currentTemplate.TemplateName}'？\n点击'是'编辑当前模板，点击'否'创建新模板，点击'取消'返回。",
+                    $"是否编辑当前模板 '{_currentTemplate.Name}'？\n点击'是'编辑当前模板，点击'否'创建新模板，点击'取消'返回。",
                     "模板管理",
                     MessageBoxButtons.YesNoCancel,
                     MessageBoxIcon.Question);
@@ -474,7 +529,7 @@ namespace Audio900
                 if (createTemplateWindow.CreatedTemplate != null)
                 {
                     _templateStorageService.SaveTemplate(createTemplateWindow.CreatedTemplate);
-                    UpdateStatus($"模板 '{createTemplateWindow.CreatedTemplate.TemplateName}' 已保存");
+                    UpdateStatus($"模板 '{createTemplateWindow.CreatedTemplate.Name}' 已保存");
                 }
 
                 // 刷新模板列表
@@ -483,7 +538,7 @@ namespace Audio900
                 // 选中模板 (这将触发 LoadTemplate 从磁盘加载)
                 if (createTemplateWindow.CreatedTemplate != null)
                 {
-                    int index = cmbTemplates.Items.IndexOf(createTemplateWindow.CreatedTemplate.TemplateName);
+                    int index = cmbTemplates.Items.IndexOf(createTemplateWindow.CreatedTemplate.Name);
                     if (index != -1)
                     {
                         cmbTemplates.SelectedIndex = index;

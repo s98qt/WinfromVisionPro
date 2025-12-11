@@ -104,14 +104,14 @@ namespace USBSDK_CMOS_Demo
         //public TagResolution_Dlg[] m_lpszResolution = new TagResolution_Dlg[8];	//��֧�ֵķֱ���
         public TagResolution_Dlg[] m_lpszResolution;	//��֧�ֵķֱ���
 
+        public CCamera(IntPtr hWnd, int deviceIndex = 1)
+        {
+            CAM_Initialize(hWnd, deviceIndex);
+        }
+
         public CCamera()
         {
             CAM_Initialize(IntPtr.Zero);
-        }
-
-        public CCamera(IntPtr hWnd)
-        {
-            CAM_Initialize(hWnd);
         }
 
         ~CCamera()
@@ -220,7 +220,7 @@ namespace USBSDK_CMOS_Demo
             //MainForm.s_mainForm.RefBox();
         }
 
-        private void CAM_Initialize(IntPtr hWnd)
+        private void CAM_Initialize(IntPtr hWnd, int deviceIndex = 1)
         {
             m_bCrossline = false;
             m_bstretch = false;
@@ -253,19 +253,17 @@ namespace USBSDK_CMOS_Demo
             m_CapInfo.Gain[0] = 32;
             m_CapInfo.Gain[1] = 0;
             m_CapInfo.Gain[2] = 0;
-            m_CapInfo.OffsetX = 0;
-            m_CapInfo.OffsetY = 0;
             m_nContrast = 16;
             m_ColorMode = COLOR_MODE.YUV2;
             m_FlipMode = FLIP_MODE.FLIP_NATURAL;
             m_nR = m_nG = m_nB = 500;
             m_hDevice = new IntPtr();
-            int nIndex = 1;
+            int nIndex = deviceIndex;
             if (CapReturnValul.ResSuccess != DllFunction.UVC_Initialize("UVC_DEMO", ref nIndex, ref m_hDevice))
             {
                 DllFunction.UVC_Uninitialize(m_hDevice);
                 m_hDevice = IntPtr.Zero;
-                MessageBox.Show("Initial Error");
+                // MessageBox.Show("Initial Error"); // Disable popup for auto-detection
                 return;
             }
 

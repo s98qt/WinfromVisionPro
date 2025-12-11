@@ -40,6 +40,12 @@ namespace Audio900.Services
         // 1960相机的窗口句柄(需要外部设置)
         private IntPtr _windowHandle1960 = IntPtr.Zero;
 
+        // iCam SDK 全局句柄缓存
+        private static IntPtr[] _camHandleList = null;
+        private static int _camCount = 0;
+        private static bool _isSdkInitialized = false;
+        private static object _sdkLock = new object();
+
 
         // VisionPro 图像用于 WinForms 显示
         private ICogImage _cogImage;
@@ -115,13 +121,46 @@ namespace Audio900.Services
         }
 
         /// <summary>
+        /// 获取连接的相机数量
+        /// </summary>
+        public static int GetCameraCount()
+        {
+            try
+            {
+                lock (_sdkLock)
+                {
+                    if (!_isSdkInitialized)
+                    {
+                        _camHandleList = new IntPtr[16];
+                        iCam.Init(_camHandleList, out _camCount);
+                        _isSdkInitialized = true;
+                    }
+                }
+                
+                // 如果是iCam相机，返回检测到的数量
+                if (_camCount > 0) return _camCount;
+                
+                // 如果没有检测到iCam，可能是UVC相机，默认尝试1个
+                // 或者如果有更高级的UVC检测逻辑可以在这里添加
+                return 1;
+            }
+            catch (Exception)
+            {
+                // 发生异常时保守返回1
+                return 1;
+            }
+        }
+
+        /// <summary>
         /// 尝试初始化1960型号相机
         /// </summary>
         private bool TryInitialize1960Camera()
         {
             try
             {
-                _camera1960 = new CCamera(_windowHandle1960);
+                // 传入相机索引（假设UVC索引从1开始，或者根据实际情况调整）
+                // 如果 _cameraIndex 是 0, 1, 2... 则传入 1, 2, 3...
+                _camera1960 = new CCamera(_windowHandle1960, _cameraIndex + 1);
                 
                 if (_camera1960.DeviceHandle != IntPtr.Zero)
                 {
@@ -147,13 +186,19 @@ namespace Audio900.Services
         {
             try
             {
-                IntPtr[] camHandleList = new IntPtr[16];
-                int camCount;
-                iCam.Init(camHandleList, out camCount);
-
-                if (camCount >= 1)
+                lock (_sdkLock)
                 {
-                    _camHandle = camHandleList[0];
+                    if (!_isSdkInitialized)
+                    {
+                        _camHandleList = new IntPtr[16];
+                        iCam.Init(_camHandleList, out _camCount);
+                        _isSdkInitialized = true;
+                    }
+                }
+
+                if (_cameraIndex < _camCount)
+                {
+                    _camHandle = _camHandleList[_cameraIndex];
                     
                     // 设置曝光
                     iCam.SetExposure(_camHandle, 1);

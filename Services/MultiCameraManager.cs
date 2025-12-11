@@ -21,14 +21,18 @@ namespace Audio900.Services
         public event EventHandler<CameraImageEventArgs> ImageCaptured;
         
         /// <summary>
-        /// 自动检测并初始化所有相机（最多3个）
+        /// 自动检测并初始化所有相机
         /// </summary>
         public async Task<int> InitializeCameras(Control parentControl)
         {
             try
             {
-                // 尝试初始化最多3个相机
-                for (int i = 0; i < 3; i++)
+                // 先获取实际检测到的相机数量
+                int cameraCount = CameraService.GetCameraCount();
+                LoggerService.Info($"检测到 {cameraCount} 个相机");
+
+                // 尝试初始化检测到的相机
+                for (int i = 0; i < cameraCount; i++)
                 {
                     var camera = new CameraService(i);
                     bool success = await camera.InitializeCamera(parentControl);
@@ -52,6 +56,7 @@ namespace Audio900.Services
                     }
                     else
                     {
+                        LoggerService.Warn($"相机 {i} 初始化失败");
                         // 如果第一个相机都失败，直接退出
                         if (i == 0)
                         {
@@ -65,6 +70,7 @@ namespace Audio900.Services
             }
             catch (Exception ex)
             {
+                LoggerService.Error(ex, "初始化相机管理器失败");
                 return 0;
             }
         }
