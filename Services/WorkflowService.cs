@@ -65,7 +65,10 @@ namespace Audio900.Services
         public event Action<WorkStep> OnStepCompleted;
         public event Action<string> OverallResultChanged;
         public event Action<string, Color> RecordingStatusChanged; // status, color
-
+        
+        // 新增：检测结果事件，携带图像和图形
+        public event EventHandler<InspectionResultEventArgs> InspectionResultReady;
+        
         public WorkflowService(CameraService cameraService)
         {
             _cameraService = cameraService;
@@ -270,6 +273,16 @@ namespace Audio900.Services
                     var inspection = await RunVisionInspection(currentImage, step);
                     UpdateStatus($"步骤{step.StepNumber}: {inspection.Reason}");
                     
+                    // 触发结果事件，用于UI显示
+                    InspectionResultReady?.Invoke(this, new InspectionResultEventArgs 
+                    { 
+                        Image = currentImage,
+                        Record = inspection.Record,
+                        Results = inspection.Results,
+                        IsPassed = inspection.Passed,
+                        Step = step
+                    });
+
                     // 步骤4：判断匹配结果
                     if (inspection.Passed)
                     {
@@ -785,56 +798,57 @@ namespace Audio900.Services
         /// <summary>
         /// 执行视觉检测：运行工具块并校验参数公差
         /// </summary>
-        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results)> RunVisionInspection(ICogImage image, WorkStep step)
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record)> RunVisionInspection(ICogImage image, WorkStep step)
         {
             return await Task.Run(() => 
             {
                 var results = new Dictionary<string, double>();
+                ICogRecord record = null;
+
                 try
                 {
                     if (!_stepToolBlocks.TryGetValue(step.StepNumber, out CogToolBlock toolBlock))
                     {
                         _logger.Warn($"步骤 {step.StepNumber}: 未加载 ToolBlock");
-                        return (false, "ToolBlock未加载", results);
+                        return (false, "ToolBlock未加载", results, null);
                     }
 
                     lock (toolBlock)
                     {
                         if (toolBlock.Inputs.Contains("InputImage"))
                         {
-                            // 检查图像类型，在VisionPro里面转换为灰度图像
-                            ICogImage inputImage = image;
-                            //if (image is CogImage24PlanarColor colorImage)
-                            //{
-                            //    try
-                            //    {
-                            //        using (Bitmap bmp = colorImage.ToBitmap())
-                            //        {
-                            //            inputImage = new CogImage8Grey(bmp);
-                            //        }
-                            //    }
-                            //    catch (Exception ex)
-                            //    {
-                            //        inputImage = image;
-                            //    }
-                            //}
-                            
-                            toolBlock.Inputs["InputImage"].Value = inputImage;
+                            toolBlock.Inputs["InputImage"].Value = image;
                         }
                         
-                        toolBlock.Run();                        
+                        toolBlock.Run();
+                        
+                        // 获取输出参数
                         foreach(CogToolBlockTerminal terminal in toolBlock.Outputs)
                         {
-                            if (terminal.Value == null)
-                            {
-                                continue;
-                            }
+                            if (terminal.Value == null) continue;
 
+                            // 1. 尝试直接作为 double 解析
                             if (double.TryParse(terminal.Value.ToString(), out double val))
                             {
                                 results[terminal.Name] = val;
                             }
+                            // 2. 尝试作为 CogTransform2DLinear 解析 (常见的位置输出类型)
+                            // 这样即使用户在 VPP 里输出的是一个 Pose 对象，UI 也能自动获取到 X,Y,Rotation
+                            else if (terminal.Value is CogTransform2DLinear pose)
+                            {
+                                results["TranslationX"] = pose.TranslationX;
+                                results["TranslationY"] = pose.TranslationY;
+                                results["Rotation"] = pose.Rotation;
+                                
+                                // 同时也保存原始名称的属性，以防万一
+                                results[$"{terminal.Name}.TranslationX"] = pose.TranslationX;
+                                results[$"{terminal.Name}.TranslationY"] = pose.TranslationY;
+                                results[$"{terminal.Name}.Rotation"] = pose.Rotation;
+                            }
                         }
+
+                        // 获取所有运行记录（图像+图形+文字）
+                        record = toolBlock.CreateLastRunRecord();
                         
                         // 2. 校验参数公差
                         if (step.Parameters != null && step.Parameters.Count > 0)
@@ -845,7 +859,7 @@ namespace Audio900.Services
                                 
                                 if (!results.ContainsKey(param.Name))
                                 {
-                                    return (false, $"缺少输出参数: {param.Name}", results);
+                                    return (false, $"缺少输出参数: {param.Name}", results, record);
                                 }
                                 
                                 double actualVal = results[param.Name];
@@ -853,25 +867,25 @@ namespace Audio900.Services
                                 
                                 if (diff > param.Tolerance)
                                 {
-                                    return (false, $"参数[{param.Name}]超差: 实际{actualVal:F3} 标准{param.StandardValue:F3} 偏差{diff:F3} > 公差{param.Tolerance}", results);
+                                    return (false, $"参数[{param.Name}]超差: 实际{actualVal:F3} 标准{param.StandardValue:F3} 偏差{diff:F3} > 公差{param.Tolerance}", results, record);
                                 }
                             }
-                            return (true, "参数检测通过", results);
+                            return (true, "参数检测通过", results, record);
                         }
                         else
                         {                            
                             // 既无参数也无Score，仅判断工具运行状态
                             if (toolBlock.RunStatus.Result == CogToolResultConstants.Accept)
-                                return (true, "工具运行成功(无参数检查)", results);
+                                return (true, "工具运行成功(无参数检查)", results, record);
                             else
-                                return (false, $"工具运行失败: {toolBlock.RunStatus.Message}", results);
+                                return (false, $"工具运行失败: {toolBlock.RunStatus.Message}", results, record);
                         }
                     }
                 }
                 catch (Exception ex)
                 {
                     _logger.Error($"VisionPro 运行异常: {ex.Message}");
-                    return (false, $"视觉异常: {ex.Message}", results);
+                    return (false, $"视觉异常: {ex.Message}", results, null);
                 }
             });
         }
@@ -1009,5 +1023,17 @@ namespace Audio900.Services
         {
             StatusMessageChanged?.Invoke(this, message);
         }
+    }
+
+    /// <summary>
+    /// 检测结果事件参数
+    /// </summary>
+    public class InspectionResultEventArgs : EventArgs
+    {
+        public ICogImage Image { get; set; }
+        public ICogRecord Record { get; set; }
+        public Dictionary<string, double> Results { get; set; }
+        public bool IsPassed { get; set; }
+        public WorkStep Step { get; set; }
     }
 }

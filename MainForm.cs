@@ -97,15 +97,12 @@ namespace Audio900
             {
                 string strMesResult = PostMes.CreateInstance().PostCheckSN(sn);
                 MesResult mesResult = new MesResult();
-                mesResult = JsonConvert.DeserializeAnonymousType<MesResult>(strMesResult, mesResult);
-                
-                // Thread.Sleep(10); // UI线程最好不要Sleep
+                mesResult = JsonConvert.DeserializeAnonymousType<MesResult>(strMesResult, mesResult);          
                 
                 if (mesResult.Result)
                 {
                     // 验证通过，禁用输入框防止误触
-                    // this.txtProductSN.Enabled = false; // WinForms下禁用可能会导致无法再次扫码，视需求而定。通常扫码后会清空或全选。
-                    // 这里保持WPF逻辑：验证成功则认为SN有效
+                    // this.txtProductSN.Enabled = false; // WinForms下禁用可能会导致无法再次扫码
                 }
                 else
                 {
@@ -131,14 +128,7 @@ namespace Audio900
                 
                 // 加载模板列表
                 LoadTemplates();
-                
-                // 初始化多相机界面 (替代旧的 InitializeCameras)
-                // InitializeMultiCameraUI 已经在构造函数中调用，这里不需要再次调用，或者可以移到这里
-                // 但由于它是 async 的，构造函数里调用是 fire-and-forget。
-                // 稳妥起见，我们在构造函数里不做，改在这里做，或者保持现状。
-                // 之前的代码在构造函数里加了 InitializeMultiCameraUI()调用。
-                // 让我们确认一下构造函数。
-                
+               
                 // 初始化工作流服务
                 InitializeWorkflow();
 
@@ -201,6 +191,12 @@ namespace Audio900
                 // 订阅多相机事件
                 _multiCameraManager.ImageCaptured += OnCameraImageCaptured;
                 _multiCameraManager.StartAllCameras();
+
+                // 将第一个相机分配给 _cameraService，供 WorkflowService 使用
+                if (cameraCount > 0)
+                {
+                    _cameraService = _multiCameraManager.GetCamera(0);
+                }
             }
             catch (Exception ex)
             {
@@ -363,9 +359,122 @@ namespace Audio900
             _workflowService.OverallResultChanged += OnWorkflowOverallResultChanged;
             _workflowService.OnStepCompleted += OnWorkflowStepCompleted;
             _workflowService.RecordingStatusChanged += OnWorkflowRecordingStatusChanged;
+            _workflowService.InspectionResultReady += OnInspectionResultReady;
             
             // 设置初始相机连接状态
             _workflowService.SetCameraConnectionStatus(_cameraService != null);
+        }
+
+        private void OnInspectionResultReady(object sender, InspectionResultEventArgs e)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new EventHandler<InspectionResultEventArgs>(OnInspectionResultReady), sender, e);
+                return;
+            }
+
+            try
+            {
+                // 默认使用第一个显示控件
+                if (_cogDisplays.Count > 0)
+                {
+                    var display = _cogDisplays[0];
+
+                    // 1. 设置 Record 或 Image
+                    if (e.Record != null)
+                    {
+                        display.Record = e.Record;
+                    }
+                    else if (e.Image != null)
+                    {
+                         // 只有当图像对象不同时才更新
+                        if (display.Image != e.Image)
+                        {
+                            display.Image = e.Image;
+                        }
+                    }
+                    
+                    display.Fit(true);
+
+                    // 2. 准备绘制覆盖层
+                    display.StaticGraphics.Clear();
+                    
+                    if (e.Image != null)
+                    {
+                        // 尝试从 Results 获取定位信息
+                        double x = e.Image.Width / 2.0;
+                        double y = e.Image.Height / 2.0;
+                        double rotation = 0;
+
+                        if (e.Results != null)
+                        {
+                            // 尝试常见的变量名 (TranslationX, TranslationY, Rotation)
+                            if (TryGetResultValue(e.Results, out double tx, "TranslationX", "X", "x") &&
+                                TryGetResultValue(e.Results, out double ty, "TranslationY", "Y", "y"))
+                            {
+                                x = tx;
+                                y = ty;
+                            }
+                            
+                            if (TryGetResultValue(e.Results, out double rot, "Rotation", "Angle", "R", "rotation"))
+                            {
+                                rotation = rot;
+                            }
+                        }
+
+                        // 3. 创建带角度的矩形框
+                        var rect = new CogRectangleAffine();
+                        // 框的大小，暂定 500x500，或者根据实际需求调整
+                        double boxWidth = 500;
+                        double boxHeight = 500;
+                        
+                        // SetCenterLengthsRotationSkew(centerX, centerY, sideXLength, sideYLength, rotation, skew)
+                        rect.SetCenterLengthsRotationSkew(x, y, boxWidth, boxHeight, rotation, 0);
+                        rect.Color = e.IsPassed ? CogColorConstants.Green : CogColorConstants.Red;
+                        rect.LineWidthInScreenPixels = e.IsPassed ? 3 : 5;
+                        
+                        display.StaticGraphics.Add(rect, "ResultBox");
+
+                        // 4. 创建 PASS/FAIL 标签
+                        var label = new CogGraphicLabel();
+                        label.Text = e.IsPassed ? "PASS" : "FAIL";
+                        label.Color = e.IsPassed ? CogColorConstants.Green : CogColorConstants.Red;
+                        label.Font = new Font("Microsoft Sans Serif", 24, FontStyle.Bold);
+                        label.Alignment = CogGraphicLabelAlignmentConstants.BaselineCenter;
+                        
+                        // 标签位置：放在矩形中心上方
+                        label.SetXYText(x, y - boxHeight / 2 - 20, label.Text);
+                        
+                        display.StaticGraphics.Add(label, "ResultLabel");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerService.Error(ex, "显示检测结果失败");
+            }
+        }
+
+        /// <summary>
+        /// 尝试从结果字典中获取值（支持多个键名别名）
+        /// </summary>
+        private bool TryGetResultValue(Dictionary<string, double> results, out double value, params string[] keys)
+        {
+            value = 0;
+            foreach (var key in keys)
+            {
+                // 优先精确匹配
+                if (results.TryGetValue(key, out value)) return true;
+                
+                // 忽略大小写匹配
+                var matchKey = results.Keys.FirstOrDefault(k => k.Equals(key, StringComparison.OrdinalIgnoreCase));
+                if (matchKey != null)
+                {
+                    value = results[matchKey];
+                    return true;
+                }
+            }
+            return false;
         }
 
         private void OnWorkflowStatusMessageChanged(object sender, string message)
@@ -397,12 +506,10 @@ namespace Audio900
             if (result == "PASS")
             {
                 lblResult.BackColor = Color.FromArgb(76, 175, 80); // Green
-                DrawResultGraphic(true);
             }
             else if (result == "FAIL")
             {
                 lblResult.BackColor = Color.Red;
-                DrawResultGraphic(false);
             }
             else
             {
@@ -448,44 +555,6 @@ namespace Audio900
             lblCameraVideoStatus.BackColor = color;
         }
 
-        /// <summary>
-        /// 绘制结果框
-        /// </summary>
-        private void DrawResultGraphic(bool isPass)
-        {
-            try 
-            {
-                var color = isPass ? CogColorConstants.Green : CogColorConstants.Red;
-                
-                foreach(var display in _cogDisplays)
-                {
-                    // 清除之前的图形
-                    display.StaticGraphics.Clear();
-                    
-                    // 创建一个覆盖全图的矩形框
-                    // 注意：这需要有图像才能获取宽高。如果没图像，就不画。
-                    if (display.Image != null)
-                    {
-                        var rect = new CogRectangle();
-                        // VisionPro 坐标系原点通常在左上角，CenterX/Y 是矩形中心
-                        rect.SetCenterWidthHeight(
-                            display.Image.Width / 2.0, 
-                            display.Image.Height / 2.0, 
-                            display.Image.Width, 
-                            display.Image.Height);
-                        rect.Color = color;
-                        rect.LineWidthInScreenPixels = 10; // 线宽加粗以便明显
-                        
-                        // 添加到显示控件
-                        display.StaticGraphics.Add(rect, "ResultBox");
-                    }
-                }
-            }
-            catch(Exception ex)
-            {
-                LoggerService.Error(ex, "绘制结果框失败");
-            }
-        }
 
         /// <summary>
         /// 打开相机按钮点击
