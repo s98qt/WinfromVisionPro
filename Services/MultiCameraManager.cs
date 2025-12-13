@@ -8,8 +8,9 @@ using System.Windows.Forms;
 namespace Audio900.Services
 {
     /// <summary>
-    /// 多相机管理器 - 支持最多3个相机
+    /// 多相机管理器 - 已废弃，功能已合并到 CameraService
     /// </summary>
+    [Obsolete("此类已废弃，请使用 CameraService 的多相机功能")]
     public class MultiCameraManager
     {
         private List<CameraService> _cameras = new List<CameraService>();
@@ -118,14 +119,5 @@ namespace Audio900.Services
             }
             _cameras.Clear();
         }
-    }
-    
-    /// <summary>
-    /// 相机图像事件参数
-    /// </summary>
-    public class CameraImageEventArgs : EventArgs
-    {
-        public int CameraIndex { get; set; }
-        public ICogImage Image { get; set; }
     }
 }

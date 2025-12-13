@@ -42,9 +42,6 @@ namespace Audio900.Services
         private CameraService _cameraService;
         private WorkTemplate _currentTemplate;
         private VideoRecordingService _videoRecordingService;
-
-        // 相机连接状态标志
-        private bool _isCameraConnected = false;
         
         // 离线模式测试图片索引
         private int _offlineImageIndex = 0;
@@ -68,6 +65,10 @@ namespace Audio900.Services
         
         // 新增：检测结果事件，携带图像和图形
         public event EventHandler<InspectionResultEventArgs> InspectionResultReady;
+
+        public event EventHandler<ToolBlockDebugEventArgs> ToolBlockDebugReady;
+
+        public bool EnableDebugPopup { get; set; }
         
         public WorkflowService(CameraService cameraService)
         {
@@ -82,14 +83,6 @@ namespace Audio900.Services
             }
         }
 
-        /// <summary>
-        /// 设置相机连接状态
-        /// </summary>
-        public void SetCameraConnectionStatus(bool isConnected)
-        {
-            _isCameraConnected = isConnected;
-            _logger.Info($"相机连接状态已设置: {(_isCameraConnected ? "已连接" : "未连接，将使用离线模式")}");
-        }
 
         /// <summary>
         /// 开始工作流程
@@ -226,7 +219,7 @@ namespace Audio900.Services
                 ICogImage validImage = null;
                 stepPassed = false;
                 int totalCheckCount = 0;
-                const int MAX_TOTAL_CHECKS = 50;  // 总检测次数上限
+                const int MAX_TOTAL_CHECKS = 2;  // 总检测次数上限
                 const int CHECK_DELAY = 30;         // 每次检测间隔
                                 
                 // 主检测循环：同时检测稳定性和匹配分数
@@ -245,9 +238,7 @@ namespace Audio900.Services
                         continue;
                     }
                     
-                    _logger.Info($"步骤{step.StepNumber}: 采集图像成功 Hash={currentImage.GetHashCode()}, 尺寸={currentImage.Width}x{currentImage.Height}, 检测次数={totalCheckCount}");
-
-                    if (_isCameraConnected)
+                    if (_cameraService != null && _cameraService.IsConnected)
                     {
                         // 步骤2：检查图像稳定性
                         await ChangeState(WorkflowState.CheckingDefect);
@@ -270,7 +261,7 @@ namespace Audio900.Services
                     await ChangeState(WorkflowState.CheckingScore);
                     
                     // 执行视觉检测（包含参数公差比对）
-                    var inspection = await RunVisionInspection(currentImage, step);
+                    var inspection = await RunVisionInspection(currentImage, _stepToolBlocks[step.StepNumber], step);
                     UpdateStatus($"步骤{step.StepNumber}: {inspection.Reason}");
                     
                     // 触发结果事件，用于UI显示
@@ -442,7 +433,7 @@ namespace Audio900.Services
         private ICogImage CaptureFromCameraOrOffline()
         {
             // 1. 检查相机连接状态，如果未连接则直接进入离线模式
-            if (!_isCameraConnected)
+            if (_cameraService == null || !_cameraService.IsConnected)
             {
                 // 相机未连接，直接从离线文件夹读取
                 return LoadOfflineImage();
@@ -549,7 +540,6 @@ namespace Audio900.Services
                 }
                 else
                 {
-                    // Convert to Grey if possible
                      try 
                      {
                          CogImageConvertTool convertTool = new CogImageConvertTool();
@@ -798,19 +788,45 @@ namespace Audio900.Services
         /// <summary>
         /// 执行视觉检测：运行工具块并校验参数公差
         /// </summary>
-        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record)> RunVisionInspection(ICogImage image, WorkStep step)
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record)> RunVisionInspection(ICogImage image, CogToolBlock cogToolBlock, WorkStep step)
         {
             return await Task.Run(() => 
             {
                 var results = new Dictionary<string, double>();
                 ICogRecord record = null;
+                CogToolBlock toolBlock = null;
 
                 try
                 {
-                    if (!_stepToolBlocks.TryGetValue(step.StepNumber, out CogToolBlock toolBlock))
+                    if (!_stepToolBlocks.TryGetValue(step.StepNumber, out toolBlock))
                     {
                         _logger.Warn($"步骤 {step.StepNumber}: 未加载 ToolBlock");
                         return (false, "ToolBlock未加载", results, null);
+                    }
+
+                    void FireDebug(string message)
+                    {
+                        if (!EnableDebugPopup) return;
+                        try
+                        {
+                            if (record == null && toolBlock != null)
+                            {
+                                record = toolBlock.CreateLastRunRecord();
+                            }
+
+                            ToolBlockDebugReady?.Invoke(this, new ToolBlockDebugEventArgs
+                            {
+                                StepNumber = step.StepNumber,
+                                Step = step,
+                                ToolBlock = toolBlock,
+                                Record = record,
+                                Message = message
+                            });
+                        }
+                        catch
+                        {
+                            // ignore debug popup failures
+                        }
                     }
 
                     lock (toolBlock)
@@ -821,6 +837,18 @@ namespace Audio900.Services
                         }
                         
                         toolBlock.Run();
+
+                        // 创建运行记录
+                        record = toolBlock.CreateLastRunRecord();
+                        
+                        // 调试模式：无论成功失败都弹出调试窗口
+                        if (EnableDebugPopup)
+                        {
+                            string statusMsg = toolBlock.RunStatus.Result == CogToolResultConstants.Accept 
+                                ? "运行成功" 
+                                : toolBlock.RunStatus.Message;
+                            FireDebug($"[{toolBlock.RunStatus.Result}] {statusMsg}");
+                        }
                         
                         // 获取输出参数
                         foreach(CogToolBlockTerminal terminal in toolBlock.Outputs)
@@ -832,8 +860,6 @@ namespace Audio900.Services
                             {
                                 results[terminal.Name] = val;
                             }
-                            // 2. 尝试作为 CogTransform2DLinear 解析 (常见的位置输出类型)
-                            // 这样即使用户在 VPP 里输出的是一个 Pose 对象，UI 也能自动获取到 X,Y,Rotation
                             else if (terminal.Value is CogTransform2DLinear pose)
                             {
                                 results["TranslationX"] = pose.TranslationX;
@@ -848,7 +874,10 @@ namespace Audio900.Services
                         }
 
                         // 获取所有运行记录（图像+图形+文字）
-                        record = toolBlock.CreateLastRunRecord();
+                        if (record == null)
+                        {
+                            record = toolBlock.CreateLastRunRecord();
+                        }
                         
                         // 2. 校验参数公差
                         if (step.Parameters != null && step.Parameters.Count > 0)
@@ -859,7 +888,9 @@ namespace Audio900.Services
                                 
                                 if (!results.ContainsKey(param.Name))
                                 {
-                                    return (false, $"缺少输出参数: {param.Name}", results, record);
+                                    var reason = $"缺少输出参数: {param.Name}";
+                                    FireDebug(reason);
+                                    return (false, reason, results, record);
                                 }
                                 
                                 double actualVal = results[param.Name];
@@ -867,7 +898,9 @@ namespace Audio900.Services
                                 
                                 if (diff > param.Tolerance)
                                 {
-                                    return (false, $"参数[{param.Name}]超差: 实际{actualVal:F3} 标准{param.StandardValue:F3} 偏差{diff:F3} > 公差{param.Tolerance}", results, record);
+                                    var reason = $"参数[{param.Name}]超差: 实际{actualVal:F3} 标准{param.StandardValue:F3} 偏差{diff:F3} > 公差{param.Tolerance}";
+                                    FireDebug(reason);
+                                    return (false, reason, results, record);
                                 }
                             }
                             return (true, "参数检测通过", results, record);
@@ -878,13 +911,40 @@ namespace Audio900.Services
                             if (toolBlock.RunStatus.Result == CogToolResultConstants.Accept)
                                 return (true, "工具运行成功(无参数检查)", results, record);
                             else
-                                return (false, $"工具运行失败: {toolBlock.RunStatus.Message}", results, record);
+                            {
+                                var reason = $"工具运行失败: {toolBlock.RunStatus.Message}";
+                                FireDebug(reason);
+                                return (false, reason, results, record);
+                            }
                         }
                     }
                 }
                 catch (Exception ex)
                 {
                     _logger.Error($"VisionPro 运行异常: {ex.Message}");
+                    if (EnableDebugPopup && toolBlock != null)
+                    {
+                        try
+                        {
+                            if (record == null)
+                            {
+                                record = toolBlock.CreateLastRunRecord();
+                            }
+
+                            ToolBlockDebugReady?.Invoke(this, new ToolBlockDebugEventArgs
+                            {
+                                StepNumber = step.StepNumber,
+                                Step = step,
+                                ToolBlock = toolBlock,
+                                Record = record,
+                                Message = ex.Message
+                            });
+                        }
+                        catch
+                        {
+                            // ignore
+                        }
+                    }
                     return (false, $"视觉异常: {ex.Message}", results, null);
                 }
             });
@@ -1035,5 +1095,14 @@ namespace Audio900.Services
         public Dictionary<string, double> Results { get; set; }
         public bool IsPassed { get; set; }
         public WorkStep Step { get; set; }
+    }
+
+    public class ToolBlockDebugEventArgs : EventArgs
+    {
+        public int StepNumber { get; set; }
+        public WorkStep Step { get; set; }
+        public CogToolBlock ToolBlock { get; set; }
+        public ICogRecord Record { get; set; }
+        public string Message { get; set; }
     }
 }

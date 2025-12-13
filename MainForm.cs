@@ -12,6 +12,7 @@ using Audio900.Services;
 using Audio900.Views;
 using Cognex.VisionPro;
 using Cognex.VisionPro.Display;
+using Cognex.VisionPro.ToolBlock;
 using Newtonsoft.Json;
 using Audio.Services;
 using Params_OUMIT_;
@@ -24,7 +25,6 @@ namespace Audio900
     {
         // 服务实例
         private CameraService _cameraService;
-        private MultiCameraManager _multiCameraManager;
         private TemplateStorageService _templateStorageService;
         private VideoRecordingService _videoRecordingService;
         private WorkflowService _workflowService;
@@ -32,6 +32,11 @@ namespace Audio900
         // 当前模板和步骤
         private WorkTemplate _currentTemplate;
         private List<CogRecordDisplay> _cogDisplays = new List<CogRecordDisplay>();
+        private readonly Dictionary<int, DateTime> _freezeUntilByCameraIndex = new Dictionary<int, DateTime>();
+        
+        // 调试窗口管理
+        private readonly Dictionary<int, Form> _debugWindowsByStep = new Dictionary<int, Form>();
+        private static readonly List<Form> _allDebugWindows = new List<Form>();
         
         // 状态标志
         private bool _isWorkflowRunning = false;
@@ -43,7 +48,15 @@ namespace Audio900
             // 初始化服务
             _templateStorageService = new TemplateStorageService();
             _videoRecordingService = new VideoRecordingService();
-            _multiCameraManager = new MultiCameraManager();
+            _cameraService = new CameraService();
+
+            chkDebugMode.CheckedChanged += (s, e) =>
+            {
+                if (_workflowService != null)
+                {
+                    _workflowService.EnableDebugPopup = chkDebugMode.Checked;
+                }
+            };
 
             // 绑定扫码枪事件
             txtProductSN.KeyDown += txtProductSN_KeyDown;
@@ -145,63 +158,160 @@ namespace Audio900
         {
             try
             {
-                // 初始化相机（自动检测）
-                int cameraCount = await _multiCameraManager.InitializeCameras(this);
-                
-                if (cameraCount == 0)
+                // 先检测相机数量
+                int detectedCameraCount = CameraService.GetCameraCount();
+                LoggerService.Info($"检测到 {detectedCameraCount} 个相机");
+
+                if (detectedCameraCount == 0)
                 {
                     lblNoCamera.Visible = true;
                     lblNoCamera.Text = "未检测到相机";
+                    LoggerService.Warn("未检测到相机，将使用离线模式");
                     return;
                 }
-                
+
                 lblNoCamera.Visible = false;
                 panelCameraDisplay.Controls.Clear();
                 _cogDisplays.Clear();
 
-                // 创建布局容器
+                int actualCameraCount = 0;
+
+                // 根据相机数量选择模式
+                if (detectedCameraCount == 1)
+                {
+                    // 单相机模式
+                    LoggerService.Info("使用单相机模式");
+                    actualCameraCount = await InitializeSingleCameraMode();
+                }
+                else
+                {
+                    // 多相机模式
+                    LoggerService.Info($"使用多相机模式，相机数量: {detectedCameraCount}");
+                    actualCameraCount = await InitializeMultiCameraMode(detectedCameraCount);
+                }
+
+                if (actualCameraCount == 0)
+                {
+                    lblNoCamera.Visible = true;
+                    lblNoCamera.Text = "相机初始化失败";
+                    LoggerService.Warn("所有相机初始化失败");
+                }
+                else
+                {
+                    LoggerService.Info($"相机初始化完成，已连接 {actualCameraCount} 个相机，状态: {(_cameraService.IsConnected ? "在线" : "离线")}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerService.Error(ex, "初始化相机界面失败");
+                MessageBox.Show($"相机初始化失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 单相机模式初始化
+        /// </summary>
+        private async Task<int> InitializeSingleCameraMode()
+        {
+            try
+            {
+                // 初始化单个相机
+                bool success = await _cameraService.InitializeCamera(this);
+
+                if (!success)
+                {
+                    LoggerService.Warn("单相机初始化失败");
+                    return 0;
+                }
+
+                // 创建全屏显示
+                var display = new CogRecordDisplay
+                {
+                    Dock = DockStyle.Fill,
+                    BackColor = Color.Black
+                };
+
+                panelCameraDisplay.Controls.Add(display);
+                display.HorizontalScrollBar = false;
+                display.VerticalScrollBar = false;
+                _cogDisplays.Add(display);
+
+                // 订阅单相机图像事件
+                _cameraService.ImageCaptured += (s, image) =>
+                {
+                    OnCameraImageCaptured(s, new CameraImageEventArgs
+                    {
+                        CameraIndex = 0,
+                        Image = image
+                    });
+                };
+
+                // 启动采集
+                _cameraService.StartCapture();
+
+                LoggerService.Info("单相机模式初始化成功");
+                return 1;
+            }
+            catch (Exception ex)
+            {
+                LoggerService.Error(ex, "单相机模式初始化失败");
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// 多相机模式初始化
+        /// </summary>
+        private async Task<int> InitializeMultiCameraMode(int cameraCount)
+        {
+            try
+            {
+                // 初始化多相机
+                int actualCount = await _cameraService.InitializeMultiCameras(this);
+
+                if (actualCount == 0)
+                {
+                    LoggerService.Warn("多相机初始化失败");
+                    return 0;
+                }
+
+                // 创建分屏布局
                 var tlp = new TableLayoutPanel
                 {
                     Dock = DockStyle.Fill,
-                    ColumnCount = cameraCount,
+                    ColumnCount = actualCount,
                     RowCount = 1
                 };
 
                 panelCameraDisplay.Controls.Add(tlp);
-                for (int i = 0; i < cameraCount; i++)
+
+                for (int i = 0; i < actualCount; i++)
                 {
-                    tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / cameraCount));
-                    
+                    tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / actualCount));
+
                     var display = new CogRecordDisplay
                     {
                         Dock = DockStyle.Fill,
                         BackColor = Color.Black
                     };
-                    
-                    // 先添加到父容器，确保ActiveX控件初始化
+
                     tlp.Controls.Add(display, i, 0);
-                   
                     display.HorizontalScrollBar = false;
                     display.VerticalScrollBar = false;
                     _cogDisplays.Add(display);
                 }
-                
-                
-                
-                // 订阅多相机事件
-                _multiCameraManager.ImageCaptured += OnCameraImageCaptured;
-                _multiCameraManager.StartAllCameras();
 
-                // 将第一个相机分配给 _cameraService，供 WorkflowService 使用
-                if (cameraCount > 0)
-                {
-                    _cameraService = _multiCameraManager.GetCamera(0);
-                }
+                // 订阅多相机图像事件
+                _cameraService.MultiCameraImageCaptured += OnCameraImageCaptured;
+                _cameraService.StartAllCameras();
+
+                LoggerService.Info($"多相机模式初始化成功，已连接 {actualCount} 个相机");
+                return actualCount;
             }
             catch (Exception ex)
             {
-                LoggerService.Error(ex, "初始化多相机界面失败");
-                MessageBox.Show($"相机初始化失败: {ex.Message}");
+                LoggerService.Error(ex, "多相机模式初始化失败");
+                return 0;
             }
         }
 
@@ -218,6 +328,11 @@ namespace Audio900
                     if (InvokeRequired)
                     {
                         Invoke(new Action<object, CameraImageEventArgs>(OnCameraImageCaptured), sender, e);
+                        return;
+                    }
+
+                    if (_freezeUntilByCameraIndex.TryGetValue(e.CameraIndex, out DateTime freezeUntil) && DateTime.Now < freezeUntil)
+                    {
                         return;
                     }
 
@@ -360,9 +475,172 @@ namespace Audio900
             _workflowService.OnStepCompleted += OnWorkflowStepCompleted;
             _workflowService.RecordingStatusChanged += OnWorkflowRecordingStatusChanged;
             _workflowService.InspectionResultReady += OnInspectionResultReady;
+            _workflowService.ToolBlockDebugReady += OnToolBlockDebugReady;
+            _workflowService.EnableDebugPopup = chkDebugMode.Checked;
             
-            // 设置初始相机连接状态
-            _workflowService.SetCameraConnectionStatus(_cameraService != null);
+            // 相机连接状态现在通过 CameraService.IsConnected 属性自动获取
+        }
+
+        private void OnToolBlockDebugReady(object sender, ToolBlockDebugEventArgs e)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new EventHandler<ToolBlockDebugEventArgs>(OnToolBlockDebugReady), sender, e);
+                return;
+            }
+
+            if (!chkDebugMode.Checked)
+            {
+                return;
+            }
+
+            try
+            {
+                Form debugForm;
+                CogToolBlockEditV2 editControl;
+                CogRecordDisplay recordDisplay;
+                SplitContainer split;
+                TableLayoutPanel bottomPanel;
+                Button btnCloseAll;
+
+                // 检查是否已有该步骤的调试窗口
+                if (_debugWindowsByStep.TryGetValue(e.StepNumber, out debugForm) && !debugForm.IsDisposed)
+                {
+                    // 复用现有窗口，更新内容
+                    debugForm.Text = $"VisionPro调试 - Step {e.StepNumber} - {e.Message}";
+                    
+                    // 找到现有控件并更新
+                    split = debugForm.Controls.OfType<TableLayoutPanel>().FirstOrDefault()?.Controls.OfType<SplitContainer>().FirstOrDefault();
+                    if (split != null)
+                    {
+                        editControl = split.Panel1.Controls.OfType<CogToolBlockEditV2>().FirstOrDefault();
+                        recordDisplay = split.Panel2.Controls.OfType<CogRecordDisplay>().FirstOrDefault();
+                        
+                        if (editControl != null)
+                        {
+                            editControl.Subject = e.ToolBlock;
+                        }
+                        
+                        if (recordDisplay != null && e.Record != null)
+                        {
+                            recordDisplay.Record = e.Record;
+                            recordDisplay.Fit(true);
+                        }
+                    }
+                    
+                    // 将窗口置前
+                    if (debugForm.WindowState == FormWindowState.Minimized)
+                    {
+                        debugForm.WindowState = FormWindowState.Maximized;
+                    }
+                    debugForm.BringToFront();
+                    debugForm.Activate();
+                }
+                else
+                {
+                    // 创建新窗口
+                    debugForm = new Form();
+                    debugForm.Text = $"VisionPro调试 - Step {e.StepNumber} - {e.Message}";
+                    debugForm.WindowState = FormWindowState.Maximized;
+                    debugForm.StartPosition = FormStartPosition.CenterScreen;
+
+                    // 主布局：上面是SplitContainer，下面是按钮
+                    var mainLayout = new TableLayoutPanel();
+                    mainLayout.Dock = DockStyle.Fill;
+                    mainLayout.RowCount = 2;
+                    mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+                    mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50F));
+
+                    split = new SplitContainer();
+                    split.Dock = DockStyle.Fill;
+                    split.Orientation = Orientation.Vertical;
+                    split.SplitterDistance = 500;
+
+                    editControl = new CogToolBlockEditV2();
+                    editControl.Dock = DockStyle.Fill;
+                    editControl.Subject = e.ToolBlock;
+
+                    recordDisplay = new CogRecordDisplay();
+                    recordDisplay.Dock = DockStyle.Fill;
+                    recordDisplay.BackColor = Color.Black;
+                    
+
+                    split.Panel1.Controls.Add(editControl);
+                    split.Panel2.Controls.Add(recordDisplay);
+                    //recordDisplay.HorizontalScrollBar = false;
+                    //recordDisplay.VerticalScrollBar = false;
+
+                    if (e.Record != null)
+                    {
+                        recordDisplay.Record = e.Record;
+                        //recordDisplay.Fit(true);
+                    }
+
+                    // 底部按钮面板
+                    bottomPanel = new TableLayoutPanel();
+                    bottomPanel.Dock = DockStyle.Fill;
+                    bottomPanel.ColumnCount = 3;
+                    bottomPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+                    bottomPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150F));
+                    bottomPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 20F));
+
+                    btnCloseAll = new Button();
+                    btnCloseAll.Text = "关闭所有调试窗";
+                    btnCloseAll.Dock = DockStyle.Fill;
+                    btnCloseAll.Font = new Font("Microsoft Sans Serif", 10F, FontStyle.Bold);
+                    btnCloseAll.Click += (s, args) =>
+                    {
+                        CloseAllDebugWindows();
+                    };
+
+                    bottomPanel.Controls.Add(new Label(), 0, 0); // 占位
+                    bottomPanel.Controls.Add(btnCloseAll, 1, 0);
+
+                    mainLayout.Controls.Add(split, 0, 0);
+                    mainLayout.Controls.Add(bottomPanel, 0, 1);
+
+                    debugForm.Controls.Add(mainLayout);
+
+                    // 窗口关闭时清理
+                    debugForm.FormClosed += (s, args) =>
+                    {
+                        _debugWindowsByStep.Remove(e.StepNumber);
+                        _allDebugWindows.Remove(debugForm);
+                    };
+
+                    // 记录窗口
+                    _debugWindowsByStep[e.StepNumber] = debugForm;
+                    _allDebugWindows.Add(debugForm);
+
+                    debugForm.Show(this);
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerService.Error(ex, "打开VisionPro调试窗口失败");
+            }
+        }
+
+        private void CloseAllDebugWindows()
+        {
+            try
+            {
+                // 复制列表以避免在迭代时修改
+                var windowsToClose = _allDebugWindows.ToList();
+                foreach (var window in windowsToClose)
+                {
+                    if (window != null && !window.IsDisposed)
+                    {
+                        window.Close();
+                    }
+                }
+                _debugWindowsByStep.Clear();
+                _allDebugWindows.Clear();
+            }
+            catch (Exception ex)
+            {
+                LoggerService.Error(ex, "关闭调试窗口失败");
+            }
         }
 
         private void OnInspectionResultReady(object sender, InspectionResultEventArgs e)
@@ -379,6 +657,7 @@ namespace Audio900
                 if (_cogDisplays.Count > 0)
                 {
                     var display = _cogDisplays[0];
+                    _freezeUntilByCameraIndex[0] = DateTime.Now.AddMilliseconds(2000);
 
                     // 1. 设置 Record 或 Image
                     if (e.Record != null)

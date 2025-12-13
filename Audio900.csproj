@@ -133,6 +133,12 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="DebugHelper\toolBlock.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="DebugHelper\toolBlock.Designer.cs">
+      <DependentUpon>toolBlock.cs</DependentUpon>
+    </Compile>
     <Compile Include="MainForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -175,6 +181,9 @@
     <Compile Include="Views\StepControl.Designer.cs">
       <DependentUpon>StepControl.cs</DependentUpon>
     </Compile>
+    <EmbeddedResource Include="DebugHelper\toolBlock.resx">
+      <DependentUpon>toolBlock.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="MainForm.resx">
       <DependentUpon>MainForm.cs</DependentUpon>
     </EmbeddedResource>

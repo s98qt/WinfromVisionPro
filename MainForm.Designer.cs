@@ -42,6 +42,7 @@
             this.label5 = new System.Windows.Forms.Label();
             this.txtFileName = new System.Windows.Forms.TextBox();
             this.panelTop = new System.Windows.Forms.Panel();
+            this.chkDebugMode = new System.Windows.Forms.CheckBox();
             this.btnOpenCamera = new System.Windows.Forms.Button();
             this.lblCameraVideoStatus = new System.Windows.Forms.Label();
             this.lblImageArea = new System.Windows.Forms.Label();
@@ -244,6 +245,7 @@
             // panelTop
             // 
             this.panelTop.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(33)))), ((int)(((byte)(150)))), ((int)(((byte)(243)))));
+            this.panelTop.Controls.Add(this.chkDebugMode);
             this.panelTop.Controls.Add(this.btnOpenCamera);
             this.panelTop.Controls.Add(this.lblCameraVideoStatus);
             this.panelTop.Controls.Add(this.lblImageArea);
@@ -253,6 +255,20 @@
             this.panelTop.Name = "panelTop";
             this.panelTop.Size = new System.Drawing.Size(1660, 61);
             this.panelTop.TabIndex = 0;
+            // 
+            // chkDebugMode
+            // 
+            this.chkDebugMode.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.chkDebugMode.AutoSize = true;
+            this.chkDebugMode.Font = new System.Drawing.Font("微软雅黑", 10.5F);
+            this.chkDebugMode.ForeColor = System.Drawing.Color.White;
+            this.chkDebugMode.Location = new System.Drawing.Point(998, 12);
+            this.chkDebugMode.Margin = new System.Windows.Forms.Padding(2, 4, 2, 4);
+            this.chkDebugMode.Name = "chkDebugMode";
+            this.chkDebugMode.Size = new System.Drawing.Size(140, 36);
+            this.chkDebugMode.TabIndex = 3;
+            this.chkDebugMode.Text = "调试模式";
+            this.chkDebugMode.UseVisualStyleBackColor = true;
             // 
             // btnOpenCamera
             // 
@@ -571,6 +587,7 @@
         private System.Windows.Forms.Label lblMesStatus;
         private System.Windows.Forms.Label lblResult;
         private System.Windows.Forms.TableLayoutPanel tlpInputFields;
+        private System.Windows.Forms.CheckBox chkDebugMode;
     }
 }
 
