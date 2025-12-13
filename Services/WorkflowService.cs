@@ -355,6 +355,10 @@ namespace Audio900.Services
                     OverallResultChanged?.Invoke("FAIL");
                     
                     step.FailureReason = $"检测超时: 已尝试{totalCheckCount}次，未能同时满足稳定性和匹配条件";
+                    step.Status = "检测失败";
+                    
+                    // 触发步骤完成事件（失败状态），让UI更新颜色为红色
+                    OnStepCompleted?.Invoke(step);
                     
                     // 根据配置决定是否提示用户
                     if (step.ShowFailurePrompt)
@@ -381,6 +385,10 @@ namespace Audio900.Services
                 OverallResultChanged?.Invoke("FAIL");
                 
                 step.FailureReason = $"执行异常: {ex.Message}";
+                step.Status = "检测失败";
+                
+                // 触发步骤完成事件（失败状态），让UI更新颜色为红色
+                OnStepCompleted?.Invoke(step);
                 
                 // 根据配置决定是否提示用户
                 if (step.ShowFailurePrompt)

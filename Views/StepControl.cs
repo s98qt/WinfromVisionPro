@@ -108,7 +108,43 @@ namespace Audio900.Views
                 cmbCamera.SelectedIndex = 0;
             }
             
-            cmbCamera.SelectedIndexChanged += (s, e) => Step.CameraIndex = cmbCamera.SelectedIndex;
+            cmbCamera.SelectedIndexChanged += (s, e) => 
+            {
+                Step.CameraIndex = cmbCamera.SelectedIndex;
+                UpdateParallelHint();
+            };
+            
+            // 初始化时更新提示
+            UpdateParallelHint();
+        }
+        
+        /// <summary>
+        /// 更新并行执行的提示信息
+        /// </summary>
+        private void UpdateParallelHint()
+        {
+            int cameraCount = CameraService.GetCameraCount();
+            
+            // 多相机模式下的智能提示
+            if (cameraCount > 1 && _cameraService != null && _cameraService.IsMultiCameraMode)
+            {
+                // 如果是多相机模式，建议启用并行执行
+                chkParallel.Text = "并行执行 (推荐)";
+                chkParallel.ForeColor = System.Drawing.Color.Green;
+                
+                // 如果用户还没有手动设置过，自动启用
+                if (!Step.IsParallel)
+                {
+                    Step.IsParallel = true;
+                    chkParallel.Checked = true;
+                }
+            }
+            else
+            {
+                // 单相机模式
+                chkParallel.Text = "并行执行";
+                chkParallel.ForeColor = System.Drawing.SystemColors.ControlText;
+            }
         }
 
         private void txtFailureMessage_TextChanged(object sender, EventArgs e)

@@ -424,7 +424,7 @@ namespace Audio900
                     // Create panel for each step
                     var stepPanel = new Panel
                     {
-                        Width = flpMainSteps.Width - 25,
+                        Width = flpMainSteps.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 10,
                         Height = 150,
                         BorderStyle = BorderStyle.FixedSingle,
                         BackColor = Color.WhiteSmoke,
@@ -808,7 +808,42 @@ namespace Audio900
             {
                 if (ctrl is Panel p && p.Tag == step)
                 {
-                    p.BackColor = Color.FromArgb(76, 175, 80); // 检测通过绿色,和主界面总结果保持一样
+                    // 根据步骤状态设置颜色和文字
+                    bool isPassed = step.Status == "检测通过" || step.Status == "检测成功";
+                    
+                    if (isPassed)
+                    {
+                        // 检测成功 - 绿色
+                        p.BackColor = Color.FromArgb(76, 175, 80);
+                        
+                        // 更新步骤面板中的文字显示
+                        foreach (Control child in p.Controls)
+                        {
+                            if (child is Label lbl && lbl.Text.Contains("步骤"))
+                            {
+                                lbl.Text = $"步骤 {step.StepNumber}\r\n{step.Name}\r\n检测成功";
+                                lbl.ForeColor = Color.White;
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // 检测失败 - 红色（与图一中的红色一致）
+                        p.BackColor = Color.FromArgb(244, 67, 54); // Material Design Red 500
+                        
+                        // 更新步骤面板中的文字显示
+                        foreach (Control child in p.Controls)
+                        {
+                            if (child is Label lbl && lbl.Text.Contains("步骤"))
+                            {
+                                lbl.Text = $"步骤 {step.StepNumber}\r\n{step.Name}\r\n检测失败";
+                                lbl.ForeColor = Color.White;
+                                break;
+                            }
+                        }
+                    }
+                    
                     flpMainSteps.ScrollControlIntoView(p);
                     break;
                 }
