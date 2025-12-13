@@ -79,6 +79,36 @@ namespace Audio900.Views
             
             txtTimeout.TextChanged += (s, e) => { if (int.TryParse(txtTimeout.Text, out int val)) Step.Timeout = val; };
             chkShowPrompt.CheckedChanged += (s, e) => Step.ShowFailurePrompt = chkShowPrompt.Checked;
+
+            // 初始化相机选择
+            SetupCameraControl();
+            
+            // 初始化并行执行选项
+            chkParallel.Checked = Step.IsParallel;
+            chkParallel.CheckedChanged += (s, e) => Step.IsParallel = chkParallel.Checked;
+        }
+
+        private void SetupCameraControl()
+        {
+            cmbCamera.Items.Clear();
+            int count = CameraService.GetCameraCount();
+            if (count <= 0) count = 1; // 至少显示一个
+            
+            for (int i = 0; i < count; i++)
+            {
+                cmbCamera.Items.Add($"相机 {i + 1}");
+            }
+
+            if (Step.CameraIndex >= 0 && Step.CameraIndex < cmbCamera.Items.Count)
+            {
+                cmbCamera.SelectedIndex = Step.CameraIndex;
+            }
+            else
+            {
+                cmbCamera.SelectedIndex = 0;
+            }
+            
+            cmbCamera.SelectedIndexChanged += (s, e) => Step.CameraIndex = cmbCamera.SelectedIndex;
         }
 
         private void txtFailureMessage_TextChanged(object sender, EventArgs e)
@@ -110,7 +140,25 @@ namespace Audio900.Views
                 }
                 else
                 {
-                     snapshot = await System.Threading.Tasks.Task.Run(() => _cameraService.CaptureSnapshotAsync());
+                     // 根据是否为多相机模式选择对应的相机进行采集
+                     if (_cameraService.IsMultiCameraMode)
+                     {
+                         var camera = _cameraService.GetCamera(Step.CameraIndex);
+                         if (camera != null)
+                         {
+                             snapshot = await System.Threading.Tasks.Task.Run(() => camera.CaptureSnapshotAsync());
+                         }
+                         else
+                         {
+                             MessageBox.Show($"无效的相机索引: {Step.CameraIndex}");
+                             return;
+                         }
+                     }
+                     else
+                     {
+                         snapshot = await System.Threading.Tasks.Task.Run(() => _cameraService.CaptureSnapshotAsync());
+                     }
+
                      if (snapshot == null)
                      {
                          if (MessageBox.Show("相机采集失败，是否使用离线图片？", "提示", MessageBoxButtons.YesNo) == DialogResult.Yes)
@@ -139,7 +187,6 @@ namespace Audio900.Views
                 
                 if (snapshot != null)
                 {
-                    // Ensure image is Grayscale for VisionPro tools
                     if (!(snapshot is CogImage8Grey))
                     {
                         try
@@ -152,7 +199,7 @@ namespace Audio900.Views
                                 snapshot = convertTool.OutputImage as CogImage8Grey;
                             }
                         }
-                        catch { /* Ignore conversion error, keep original */ }
+                        catch {  }
                     }
 
                     Step.CapturedImage = snapshot;
@@ -241,7 +288,6 @@ namespace Audio900.Views
                          CogSerializer.SaveObjectToFile(toolBlock, vppPath);
                          editControl.Dispose();
                          
-                         // 自动同步 VPP 输出参数到步骤参数列表
                          try
                          {
                              // 运行一次以获取最新值（标准值）

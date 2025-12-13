@@ -65,6 +65,8 @@ namespace Audio900.Models
         private string _failurePromptMessage;
         
         // 新增属性
+        private int _cameraIndex;
+        private bool _isParallel;
         private bool _syncNextStepsEnabled;
         private string _syncNextSteps;
 
@@ -76,6 +78,24 @@ namespace Audio900.Models
         public int StepNumber { get; set; }
 
         public BindingList<StepParameter> Parameters { get; set; }
+
+        /// <summary>
+        /// 相机索引 (0: 左相机, 1: 右相机, etc.)
+        /// </summary>
+        public int CameraIndex
+        {
+            get => _cameraIndex;
+            set { _cameraIndex = value; OnPropertyChanged(nameof(CameraIndex)); }
+        }
+
+        /// <summary>
+        /// 是否与下一步并行执行
+        /// </summary>
+        public bool IsParallel
+        {
+            get => _isParallel;
+            set { _isParallel = value; OnPropertyChanged(nameof(IsParallel)); }
+        }
 
         public bool SyncNextStepsEnabled
         {

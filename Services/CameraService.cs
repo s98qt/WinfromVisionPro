@@ -115,6 +115,11 @@ namespace Audio900.Services
         /// 是否正在运行采集
         /// </summary>
         public bool IsRunning => _isRunning;
+
+        /// <summary>
+        /// 是否为多相机模式
+        /// </summary>
+        public bool IsMultiCameraMode => _isMultiCameraMode;
         #endregion
 
         #region 构造函数
@@ -265,7 +270,6 @@ namespace Audio900.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"iCam detection failed: {ex.Message}");
             }
 
             // 2. 检测 UVC (1960系列)
@@ -277,10 +281,9 @@ namespace Audio900.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"UVC detection failed: {ex.Message}");
             }
 
-            // 如果两种都没检测到，默认返回1（保底）
+            // 如果两种都没检测到，默认返回1
             return totalCount > 0 ? totalCount : 1;
         }
         #endregion

@@ -160,7 +160,6 @@
     <Compile Include="Services\JsonHelper.cs" />
     <Compile Include="Services\LicenseVerifier.cs" />
     <Compile Include="Services\LoggerService.cs" />
-    <Compile Include="Services\MultiCameraManager.cs" />
     <Compile Include="Services\Params.cs" />
     <Compile Include="Services\PostMes.cs" />
     <Compile Include="Services\StructsBody.cs" />

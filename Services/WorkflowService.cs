@@ -49,10 +49,14 @@ namespace Audio900.Services
         // ToolBlock 缓存
         private Dictionary<int, CogToolBlock> _stepToolBlocks = new Dictionary<int, CogToolBlock>();
 
-        // 图像稳定性判断相关字段
-        private ICogImage _previousGrayImage = null;  // 上一帧灰度图像
-        private Stopwatch _stableTimer = null;      // 稳定计时器
-        private bool _isStabilityChecking = false;  // 是否正在进行稳定性检测
+        // 图像稳定性判断状态类 (用于并行执行时的线程安全)
+        private class StabilityState
+        {
+            public ICogImage PreviousGrayImage { get; set; }
+            public Stopwatch StableTimer { get; set; }
+            public bool IsStabilityChecking { get; set; }
+        }
+
         private const double GRAY_DIFF_THRESHOLD = 4.0;  // 灰度差阈值
         private const int STABLE_DURATION_MS = 2000;     // 稳定持续时间（毫秒）
         bool stepPassed = false;
@@ -160,9 +164,19 @@ namespace Audio900.Services
                 // 执行各个作业步骤
                 if (_currentTemplate != null)
                 {
+                    List<WorkStep> batch = new List<WorkStep>();
                     foreach (var step in _currentTemplate.WorkSteps)
                     {
-                        await ExecuteWorkStep(step);
+                        batch.Add(step);
+                        if (!step.IsParallel)
+                        {
+                            await ExecuteStepBatch(batch);
+                            batch.Clear();
+                        }
+                    }
+                    if (batch.Count > 0)
+                    {
+                        await ExecuteStepBatch(batch);
                     }
                 }
 
@@ -205,15 +219,29 @@ namespace Audio900.Services
         }
 
         /// <summary>
+        /// 批量执行作业步骤
+        /// </summary>
+        private async Task ExecuteStepBatch(List<WorkStep> steps)
+        {
+            if (steps == null || steps.Count == 0) return;
+            
+            // 并行执行批次中的所有步骤
+            var tasks = steps.Select(step => ExecuteWorkStep(step)).ToList();
+            await Task.WhenAll(tasks);
+        }
+
+        /// <summary>
         /// 执行单个作业步骤
         /// </summary>
         private async Task ExecuteWorkStep(WorkStep step)
         {
+            StabilityState stabilityState = new StabilityState();
+            
             try
             {
                 // 设置为检测中状态（黄色）
                 UpdateStepStatus(step, "检测中...");
-                UpdateStatus($"开始执行步骤{step.StepNumber}");
+                UpdateStatus($"开始执行步骤{step.StepNumber} (相机{step.CameraIndex + 1})");
 
                 // 持续采集图像，直到图像稳定 AND 匹配分数都满足
                 ICogImage validImage = null;
@@ -229,7 +257,7 @@ namespace Audio900.Services
                     
                     // 步骤1：采集图像
                     await ChangeState(WorkflowState.AddingOumitImage);
-                    var currentImage = await CaptureOumitImage();
+                    var currentImage = await CaptureOumitImage(step.CameraIndex);
                     
                     if (currentImage == null)
                     {
@@ -242,7 +270,7 @@ namespace Audio900.Services
                     {
                         // 步骤2：检查图像稳定性
                         await ChangeState(WorkflowState.CheckingDefect);
-                        var hasDefect = await CheckImageDefect(currentImage, step);
+                        var hasDefect = await CheckImageDefect(currentImage, step, stabilityState);
 
                         if (hasDefect)
                         {
@@ -312,7 +340,7 @@ namespace Audio900.Services
                         // 图像稳定但检测失败，释放图像并重新采集
                         UpdateStatus($"步骤{step.StepNumber}: 检测失败 - {inspection.Reason}，重新采集...");                        
                         // 重置稳定性检测状态，准备下一次采集
-                        ResetStabilityCheck();
+                        ResetStabilityCheck(stabilityState);
                         await Task.Delay(CHECK_DELAY);
                     }
                 }
@@ -335,11 +363,13 @@ namespace Audio900.Services
                             ? $"步骤{step.StepNumber}检测失败！\n\n{step.FailureReason}" 
                             : step.FailurePromptMessage;
                         
-                        MessageBox.Show(promptMessage, "检测失败提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        
+                        // 在多线程环境下，避免阻塞UI主线程，最好通过事件通知UI显示
+                        // 这里简单使用 Invoke (如果是在Service中，最好不要直接弹窗)
+                        // MessageBox.Show(promptMessage, "检测失败提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        _logger.Warn($"步骤{step.StepNumber}用户提示: {promptMessage}");
                     }
                     
-                    ResetStabilityCheck();
+                    ResetStabilityCheck(stabilityState);
                 }
             }
             catch (Exception ex)
@@ -359,7 +389,8 @@ namespace Audio900.Services
                         ? $"步骤{step.StepNumber}检测失败！\n\n{step.FailureReason}" 
                         : step.FailurePromptMessage;
                     
-                    MessageBox.Show(promptMessage, "检测失败提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    // MessageBox.Show(promptMessage, "检测失败提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    _logger.Warn($"步骤{step.StepNumber}用户提示: {promptMessage}");
                 }
             }
         }
@@ -418,19 +449,13 @@ namespace Audio900.Services
             _videoRecordingService.StopRecording();
         }
 
-        /// <summary>
-        /// 采集Oumit图像
-        /// </summary>
-        private async Task<ICogImage> CaptureOumitImage()
+        private async Task<ICogImage> CaptureOumitImage(int cameraIndex = 0)
         {
             // 统一使用封装的采集方法，支持离线回退
-            return await Task.Run(() => CaptureFromCameraOrOffline());
+            return await Task.Run(() => CaptureFromCameraOrOffline(cameraIndex));
         }
 
-        /// <summary>
-        /// 统一图像采集入口：优先相机，失败则从 TEST 文件夹读取
-        /// </summary>
-        private ICogImage CaptureFromCameraOrOffline()
+        private ICogImage CaptureFromCameraOrOffline(int cameraIndex = 0)
         {
             // 1. 检查相机连接状态，如果未连接则直接进入离线模式
             if (_cameraService == null || !_cameraService.IsConnected)
@@ -444,7 +469,24 @@ namespace Audio900.Services
             {
                 if (_cameraService != null)
                 {
-                    ICogImage image = _cameraService.CaptureSnapshotAsync();
+                    ICogImage image = null;
+                    if (_cameraService.IsMultiCameraMode)
+                    {
+                        var camera = _cameraService.GetCamera(cameraIndex);
+                        if (camera != null)
+                        {
+                            image = camera.CaptureSnapshotAsync();
+                        }
+                        else
+                        {
+                            _logger.Warn($"无效的相机索引: {cameraIndex}");
+                        }
+                    }
+                    else
+                    {
+                        image = _cameraService.CaptureSnapshotAsync();
+                    }
+
                     if (image != null)
                     {
                         return image;
@@ -517,19 +559,16 @@ namespace Audio900.Services
             return null;
         }
 
-        /// <summary>
-        /// 成像稳定性判断
-        /// 判断条件：相机图像的下一帧减去上一帧的灰度值小于2，并且持续了2秒
-        /// </summary>
-        private async Task<bool> CheckImageDefect(object image, WorkStep step)
+        private async Task<bool> CheckImageDefect(object image, WorkStep step, StabilityState state)
         {
             try
             {
-                ICogImage currentFrame = CaptureFromCameraOrOffline();
+                ICogImage currentFrame = image as ICogImage; // 使用传入的图像作为当前帧
+
                 if (currentFrame == null)
                 {
-                    UpdateStatus("获取相机图像失败");
-                    return true; // 返回 true 表示有问题
+                    UpdateStatus("图像为空");
+                    return true;
                 }
 
                 // Ensure grayscale
@@ -540,69 +579,67 @@ namespace Audio900.Services
                 }
                 else
                 {
-                     try 
-                     {
-                         CogImageConvertTool convertTool = new CogImageConvertTool();
-                         convertTool.InputImage = currentFrame;
-                         convertTool.Run();
-                         currentGray = convertTool.OutputImage as CogImage8Grey;
-                     }
-                     catch
-                     {
-                         currentGray = currentFrame; // Fallback
-                     }
+                    try 
+                    {
+                        CogImageConvertTool convertTool = new CogImageConvertTool();
+                        convertTool.InputImage = currentFrame;
+                        convertTool.Run();
+                        currentGray = convertTool.OutputImage as CogImage8Grey;
+                    }
+                    catch
+                    {
+                        currentGray = currentFrame; // Fallback
+                    }
                 }
                 
-                if (_previousGrayImage == null)
+                if (state.PreviousGrayImage == null)
                 {
-                    _previousGrayImage = currentGray;
-                    _stableTimer = Stopwatch.StartNew();
-                    _isStabilityChecking = true;
+                    state.PreviousGrayImage = currentGray;
+                    state.StableTimer = Stopwatch.StartNew();
+                    state.IsStabilityChecking = true;
                     step.Status = "等待图像稳定...";
-                    await Task.Delay(30); // 等待下一帧
+                    // 不需要 await Task.Delay(30); 因为外部循环会有 Delay
                     return true; // 继续检测
                 }
 
                 // 计算当前帧与上一帧的平均灰度差
-                double avgDiff = CalculateAverageGrayDifference(_previousGrayImage, currentGray);
+                double avgDiff = CalculateAverageGrayDifference(state.PreviousGrayImage, currentGray);
                 
                 // 更新状态显示
-                step.Status = $"灰度差值: {avgDiff:F2} (已稳定 {_stableTimer.ElapsedMilliseconds}ms)";
+                step.Status = $"灰度差值: {avgDiff:F2} (已稳定 {state.StableTimer.ElapsedMilliseconds}ms)";
 
                 // 判断灰度差是否小于阈值
                 if (avgDiff < GRAY_DIFF_THRESHOLD)
                 {
                     // 图像稳定，检查持续时间
-                    if (_stableTimer.ElapsedMilliseconds >= STABLE_DURATION_MS)
+                    if (state.StableTimer.ElapsedMilliseconds >= STABLE_DURATION_MS)
                     {
                         step.Status = "图像稳定，触发成功";
                         UpdateStatus($"稳定检测通过 (灰度差: {avgDiff:F2})");
                         
-                        // 清理资源
-                        ResetStabilityCheck();
+                        // 清理资源 (保留 state 对象但重置内容，或者由调用方重置)
+                        // ResetStabilityCheck(state); // 这里不重置，因为返回 false 后外部会处理成功逻辑
                         
                         return false; // 无问题，可以继续
                     }
                     else
                     {
-                        _previousGrayImage = currentGray;
-                        await Task.Delay(30); // 等待下一帧
+                        state.PreviousGrayImage = currentGray; // 更新上一帧
                         return true; 
                     }
                 }
                 else
                 {
                     step.Status = $"图像不稳定，重新计时 (灰度差: {avgDiff:F2})";
-                    _stableTimer.Restart();
-                    _previousGrayImage = currentGray;
-                    await Task.Delay(30); // 等待下一帧
+                    state.StableTimer.Restart();
+                    state.PreviousGrayImage = currentGray;
                     return true; 
                 }
             }
             catch (Exception ex)
             {
                 UpdateStatus($"稳定性检测异常: {ex.Message}");
-                ResetStabilityCheck();
+                ResetStabilityCheck(state);
                 return true; 
             }
         }
@@ -615,8 +652,6 @@ namespace Audio900.Services
             try
             {
                 if (grayImage1 == null || grayImage2 == null) return 0.0;
-
-                // TODO: 修复引用问题后取消注释. 需要引用 Cognex.VisionPro.ImageProcessing.dll
 
                 // Use the Operator class directly with Execute method for VisionPro 9.0
                 CogIPTwoImageSubtract subtractOp = new CogIPTwoImageSubtract();
@@ -646,12 +681,15 @@ namespace Audio900.Services
         /// <summary>
         /// 重置稳定性检测状态
         /// </summary>
-        private void ResetStabilityCheck()
+        private void ResetStabilityCheck(StabilityState state)
         {
-            _previousGrayImage = null;
-            _stableTimer?.Stop();
-            _stableTimer = null;
-            _isStabilityChecking = false;
+            if (state != null)
+            {
+                state.PreviousGrayImage = null;
+                state.StableTimer?.Stop();
+                state.StableTimer = null;
+                state.IsStabilityChecking = false;
+            }
         }
 
         private static ImageCodecInfo GetEncoder(ImageFormat format)
