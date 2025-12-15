@@ -43,7 +43,6 @@
             this.txtFileName = new System.Windows.Forms.TextBox();
             this.panelTop = new System.Windows.Forms.Panel();
             this.chkDebugMode = new System.Windows.Forms.CheckBox();
-            this.btnOpenCamera = new System.Windows.Forms.Button();
             this.lblCameraVideoStatus = new System.Windows.Forms.Label();
             this.lblImageArea = new System.Windows.Forms.Label();
             this.splitContainer1 = new System.Windows.Forms.SplitContainer();
@@ -246,7 +245,6 @@
             // 
             this.panelTop.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(33)))), ((int)(((byte)(150)))), ((int)(((byte)(243)))));
             this.panelTop.Controls.Add(this.chkDebugMode);
-            this.panelTop.Controls.Add(this.btnOpenCamera);
             this.panelTop.Controls.Add(this.lblCameraVideoStatus);
             this.panelTop.Controls.Add(this.lblImageArea);
             this.panelTop.Dock = System.Windows.Forms.DockStyle.Top;
@@ -262,28 +260,13 @@
             this.chkDebugMode.AutoSize = true;
             this.chkDebugMode.Font = new System.Drawing.Font("微软雅黑", 10.5F);
             this.chkDebugMode.ForeColor = System.Drawing.Color.White;
-            this.chkDebugMode.Location = new System.Drawing.Point(998, 12);
+            this.chkDebugMode.Location = new System.Drawing.Point(1514, 10);
             this.chkDebugMode.Margin = new System.Windows.Forms.Padding(2, 4, 2, 4);
             this.chkDebugMode.Name = "chkDebugMode";
             this.chkDebugMode.Size = new System.Drawing.Size(140, 36);
             this.chkDebugMode.TabIndex = 3;
             this.chkDebugMode.Text = "调试模式";
             this.chkDebugMode.UseVisualStyleBackColor = true;
-            // 
-            // btnOpenCamera
-            // 
-            this.btnOpenCamera.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnOpenCamera.BackColor = System.Drawing.Color.White;
-            this.btnOpenCamera.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnOpenCamera.Font = new System.Drawing.Font("微软雅黑", 10.5F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
-            this.btnOpenCamera.Location = new System.Drawing.Point(1149, 4);
-            this.btnOpenCamera.Margin = new System.Windows.Forms.Padding(0);
-            this.btnOpenCamera.Name = "btnOpenCamera";
-            this.btnOpenCamera.Size = new System.Drawing.Size(161, 45);
-            this.btnOpenCamera.TabIndex = 2;
-            this.btnOpenCamera.Text = "打开相机";
-            this.btnOpenCamera.UseVisualStyleBackColor = false;
-            this.btnOpenCamera.Click += new System.EventHandler(this.btnOpenCamera_Click);
             // 
             // lblCameraVideoStatus
             // 
@@ -292,7 +275,7 @@
             this.lblCameraVideoStatus.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
             this.lblCameraVideoStatus.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
             this.lblCameraVideoStatus.ForeColor = System.Drawing.Color.White;
-            this.lblCameraVideoStatus.Location = new System.Drawing.Point(1334, 10);
+            this.lblCameraVideoStatus.Location = new System.Drawing.Point(1325, 9);
             this.lblCameraVideoStatus.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblCameraVideoStatus.Name = "lblCameraVideoStatus";
             this.lblCameraVideoStatus.Size = new System.Drawing.Size(155, 39);
@@ -555,7 +538,6 @@
         private System.Windows.Forms.Panel panelTop;
         private System.Windows.Forms.Label lblImageArea;
         private System.Windows.Forms.Label lblCameraVideoStatus;
-        private System.Windows.Forms.Button btnOpenCamera;
         private System.Windows.Forms.SplitContainer splitContainer1;
         private Cognex.VisionPro.CogRecordDisplay cogRecordDisplay1;
         private System.Windows.Forms.Panel panelCameraDisplay;

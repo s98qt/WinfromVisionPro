@@ -660,6 +660,7 @@ namespace Audio900
                     _freezeUntilByCameraIndex[0] = DateTime.Now.AddMilliseconds(2000);
 
                     // 1. 设置 Record 或 Image
+                    // 优先使用 Record，因为它包含所有工具的图形结果（模板匹配框、距离线等）
                     if (e.Record != null)
                     {
                         display.Record = e.Record;
@@ -675,10 +676,12 @@ namespace Audio900
                     
                     display.Fit(true);
 
-                    // 2. 准备绘制覆盖层
+                    // 2. 准备绘制覆盖层（只在检测失败时绘制红色框）
                     display.StaticGraphics.Clear();
                     
-                    if (e.Image != null)
+                    // 只有在检测失败时才绘制自定义的红色框和FAIL标签
+                    // 成功时直接使用VPP Record中的绿色图形（模板匹配框、距离线等）
+                    if (!e.IsPassed && e.Image != null)
                     {
                         // 尝试从 Results 获取定位信息
                         double x = e.Image.Width / 2.0;
@@ -701,30 +704,31 @@ namespace Audio900
                             }
                         }
 
-                        // 3. 创建带角度的矩形框
+                        // 3. 创建醒目的红色失败框（比绿色框更大更醒目）
                         var rect = new CogRectangleAffine();
-                        // 框的大小，暂定 500x500，或者根据实际需求调整
-                        double boxWidth = 500;
-                        double boxHeight = 500;
+                        
+                        // 失败框尺寸：设置为图像尺寸的40%，或至少800x800，确保比绿色框大
+                        double boxWidth = Math.Max(800, e.Image.Width * 0.4);
+                        double boxHeight = Math.Max(800, e.Image.Height * 0.4);
                         
                         // SetCenterLengthsRotationSkew(centerX, centerY, sideXLength, sideYLength, rotation, skew)
                         rect.SetCenterLengthsRotationSkew(x, y, boxWidth, boxHeight, rotation, 0);
-                        rect.Color = e.IsPassed ? CogColorConstants.Green : CogColorConstants.Red;
-                        rect.LineWidthInScreenPixels = e.IsPassed ? 3 : 5;
+                        rect.Color = CogColorConstants.Red;
+                        rect.LineWidthInScreenPixels = 8; // 加粗线条，更醒目
                         
-                        display.StaticGraphics.Add(rect, "ResultBox");
+                        display.StaticGraphics.Add(rect, "FailureBox");
 
-                        // 4. 创建 PASS/FAIL 标签
+                        // 4. 创建醒目的 FAIL 标签
                         var label = new CogGraphicLabel();
-                        label.Text = e.IsPassed ? "PASS" : "FAIL";
-                        label.Color = e.IsPassed ? CogColorConstants.Green : CogColorConstants.Red;
-                        label.Font = new Font("Microsoft Sans Serif", 24, FontStyle.Bold);
+                        label.Text = "FAIL";
+                        label.Color = CogColorConstants.Red;
+                        label.Font = new Font("Microsoft Sans Serif", 48, FontStyle.Bold); // 更大的字体
                         label.Alignment = CogGraphicLabelAlignmentConstants.BaselineCenter;
                         
                         // 标签位置：放在矩形中心上方
-                        label.SetXYText(x, y - boxHeight / 2 - 20, label.Text);
+                        label.SetXYText(x, y - boxHeight / 2 - 40, label.Text);
                         
-                        display.StaticGraphics.Add(label, "ResultLabel");
+                        display.StaticGraphics.Add(label, "FailureLabel");
                     }
                 }
             }

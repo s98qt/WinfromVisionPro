@@ -140,7 +140,7 @@ namespace Audio900.Services
                             }
                             catch (Exception ex)
                             {
-                                _logger.Error($"步骤 {step.StepNumber}: Failed to load ToolBlock: {ex.Message}");
+                                _logger.Error($"步骤 {step.StepNumber}: 许可证找不到Failed to load ToolBlock: {ex.Message}");
                             }
                         }
                         else if (File.Exists(modelPath))
@@ -905,18 +905,7 @@ namespace Audio900.Services
                             if (double.TryParse(terminal.Value.ToString(), out double val))
                             {
                                 results[terminal.Name] = val;
-                            }
-                            else if (terminal.Value is CogTransform2DLinear pose)
-                            {
-                                results["TranslationX"] = pose.TranslationX;
-                                results["TranslationY"] = pose.TranslationY;
-                                results["Rotation"] = pose.Rotation;
-                                
-                                // 同时也保存原始名称的属性，以防万一
-                                results[$"{terminal.Name}.TranslationX"] = pose.TranslationX;
-                                results[$"{terminal.Name}.TranslationY"] = pose.TranslationY;
-                                results[$"{terminal.Name}.Rotation"] = pose.Rotation;
-                            }
+                            }                
                         }
 
                         // 获取所有运行记录（图像+图形+文字）
