@@ -247,14 +247,12 @@ namespace Audio900.Services
                 ICogImage validImage = null;
                 stepPassed = false;
                 int totalCheckCount = 0;
-                const int MAX_TOTAL_CHECKS = 2;  // 总检测次数上限
+                const int MAX_TOTAL_CHECKS = 4;  // 总检测次数上限（避免相机刚启动/帧未到时直接退出）
                 const int CHECK_DELAY = 30;         // 每次检测间隔
                                 
                 // 主检测循环：同时检测稳定性和匹配分数
                 while (!stepPassed && totalCheckCount < MAX_TOTAL_CHECKS)
                 {
-                    totalCheckCount++;
-                    
                     // 步骤1：采集图像
                     await ChangeState(WorkflowState.AddingOumitImage);
                     var currentImage = await CaptureOumitImage(step.CameraIndex);
@@ -265,6 +263,9 @@ namespace Audio900.Services
                         await Task.Delay(CHECK_DELAY);
                         continue;
                     }
+
+                    // 仅在采集到有效图像后才计数，避免无断点时因为取不到帧而快速耗尽次数
+                    totalCheckCount++;
                     
                     if (_cameraService != null && _cameraService.IsConnected)
                     {
@@ -842,37 +843,37 @@ namespace Audio900.Services
                 ICogRecord record = null;
                 CogToolBlock toolBlock = null;
 
+                async void FireDebug(string message)
+                {
+                    if (!EnableDebugPopup) return;
+                    try
+                    {
+                        if (record == null && toolBlock != null)
+                        {
+                            record = toolBlock.CreateLastRunRecord();
+                        }
+
+                        ToolBlockDebugReady?.Invoke(this, new ToolBlockDebugEventArgs
+                        {
+                            StepNumber = step.StepNumber,
+                            Step = step,
+                            ToolBlock = toolBlock,
+                            Record = record,
+                            Message = message
+                        });
+                    }
+                    catch
+                    {
+                        // ignore debug popup failures
+                    }
+                }
+
                 try
                 {
                     if (!_stepToolBlocks.TryGetValue(step.StepNumber, out toolBlock))
                     {
                         _logger.Warn($"步骤 {step.StepNumber}: 未加载 ToolBlock");
-                        return (false, "ToolBlock未加载", results, null);
-                    }
-
-                    void FireDebug(string message)
-                    {
-                        if (!EnableDebugPopup) return;
-                        try
-                        {
-                            if (record == null && toolBlock != null)
-                            {
-                                record = toolBlock.CreateLastRunRecord();
-                            }
-
-                            ToolBlockDebugReady?.Invoke(this, new ToolBlockDebugEventArgs
-                            {
-                                StepNumber = step.StepNumber,
-                                Step = step,
-                                ToolBlock = toolBlock,
-                                Record = record,
-                                Message = message
-                            });
-                        }
-                        catch
-                        {
-                            // ignore debug popup failures
-                        }
+                        return (false, "视觉检测异常", results, null);
                     }
 
                     lock (toolBlock)
@@ -893,7 +894,7 @@ namespace Audio900.Services
                             string statusMsg = toolBlock.RunStatus.Result == CogToolResultConstants.Accept 
                                 ? "运行成功" 
                                 : toolBlock.RunStatus.Message;
-                            FireDebug($"[{toolBlock.RunStatus.Result}] {statusMsg}");
+                               FireDebug($"[{toolBlock.RunStatus.Result}] {statusMsg}");
                         }
                         
                         // 获取输出参数
@@ -924,8 +925,9 @@ namespace Audio900.Services
                                 if (!results.ContainsKey(param.Name))
                                 {
                                     var reason = $"缺少输出参数: {param.Name}";
+                                    _logger.Info(reason);
                                     FireDebug(reason);
-                                    return (false, reason, results, record);
+                                    return (false, "视觉检测异常", results, record);
                                 }
                                 
                                 double actualVal = results[param.Name];
@@ -933,9 +935,11 @@ namespace Audio900.Services
                                 
                                 if (diff > param.Tolerance)
                                 {
+                                    results["ToleranceDiff"] = diff;
                                     var reason = $"参数[{param.Name}]超差: 实际{actualVal:F3} 标准{param.StandardValue:F3} 偏差{diff:F3} > 公差{param.Tolerance}";
+                                    _logger.Info(reason);
                                     FireDebug(reason);
-                                    return (false, reason, results, record);
+                                    return (false, "视觉检测异常", results, record);
                                 }
                             }
                             return (true, "参数检测通过", results, record);
@@ -948,8 +952,9 @@ namespace Audio900.Services
                             else
                             {
                                 var reason = $"工具运行失败: {toolBlock.RunStatus.Message}";
+                                _logger.Info(reason);
                                 FireDebug(reason);
-                                return (false, reason, results, record);
+                                return (false, "视觉检测异常", results, record);
                             }
                         }
                     }
@@ -957,6 +962,7 @@ namespace Audio900.Services
                 catch (Exception ex)
                 {
                     _logger.Error($"VisionPro 运行异常: {ex.Message}");
+                    FireDebug($"视觉异常: {ex.Message}");
                     if (EnableDebugPopup && toolBlock != null)
                     {
                         try
@@ -980,7 +986,7 @@ namespace Audio900.Services
                             // ignore
                         }
                     }
-                    return (false, $"视觉异常: {ex.Message}", results, null);
+                    return (false, "视觉检测异常", results, null);
                 }
             });
         }

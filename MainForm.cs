@@ -673,62 +673,54 @@ namespace Audio900
                             display.Image = e.Image;
                         }
                     }
-                    
+
                     display.Fit(true);
 
                     // 2. 准备绘制覆盖层（只在检测失败时绘制红色框）
                     display.StaticGraphics.Clear();
-                    
+
                     // 只有在检测失败时才绘制自定义的红色框和FAIL标签
                     // 成功时直接使用VPP Record中的绿色图形（模板匹配框、距离线等）
                     if (!e.IsPassed && e.Image != null)
                     {
-                        // 尝试从 Results 获取定位信息
                         double x = e.Image.Width / 2.0;
                         double y = e.Image.Height / 2.0;
-                        double rotation = 0;
+                        double toleranceDiff = 0;
 
                         if (e.Results != null)
                         {
-                            // 尝试常见的变量名 (TranslationX, TranslationY, Rotation)
-                            if (TryGetResultValue(e.Results, out double tx, "TranslationX", "X", "x") &&
-                                TryGetResultValue(e.Results, out double ty, "TranslationY", "Y", "y"))
+                            if (TryGetResultValue(e.Results, out double diff, "ToleranceDiff"))
                             {
-                                x = tx;
-                                y = ty;
-                            }
-                            
-                            if (TryGetResultValue(e.Results, out double rot, "Rotation", "Angle", "R", "rotation"))
-                            {
-                                rotation = rot;
+                                toleranceDiff = diff;
                             }
                         }
 
-                        // 3. 创建醒目的红色失败框（比绿色框更大更醒目）
+                        // 3. 失败红框：覆盖整张影像（略留边），圈住整个影像区
                         var rect = new CogRectangleAffine();
-                        
-                        // 失败框尺寸：设置为图像尺寸的40%，或至少800x800，确保比绿色框大
-                        double boxWidth = Math.Max(800, e.Image.Width * 0.4);
-                        double boxHeight = Math.Max(800, e.Image.Height * 0.4);
-                        
-                        // SetCenterLengthsRotationSkew(centerX, centerY, sideXLength, sideYLength, rotation, skew)
-                        rect.SetCenterLengthsRotationSkew(x, y, boxWidth, boxHeight, rotation, 0);
+                        double boxWidth = e.Image.Width * 0.98;
+                        double boxHeight = e.Image.Height * 0.98;
+                        rect.SetCenterLengthsRotationSkew(x, y, boxWidth, boxHeight, 0, 0);
                         rect.Color = CogColorConstants.Red;
-                        rect.LineWidthInScreenPixels = 8; // 加粗线条，更醒目
-                        
+                        rect.LineWidthInScreenPixels = 8;
                         display.StaticGraphics.Add(rect, "FailureBox");
 
-                        // 4. 创建醒目的 FAIL 标签
-                        var label = new CogGraphicLabel();
-                        label.Text = "FAIL";
-                        label.Color = CogColorConstants.Red;
-                        label.Font = new Font("Microsoft Sans Serif", 48, FontStyle.Bold); // 更大的字体
-                        label.Alignment = CogGraphicLabelAlignmentConstants.BaselineCenter;
-                        
-                        // 标签位置：放在矩形中心上方
-                        label.SetXYText(x, y - boxHeight / 2 - 40, label.Text);
-                        
-                        display.StaticGraphics.Add(label, "FailureLabel");
+                        // 4. FAIL 标签（顶部居中）
+                        var failLabel = new CogGraphicLabel();
+                        failLabel.Text = "FAIL";
+                        failLabel.Color = CogColorConstants.Red;
+                        failLabel.Font = new Font("Microsoft Sans Serif", 48, FontStyle.Bold);
+                        failLabel.Alignment = CogGraphicLabelAlignmentConstants.BaselineCenter;
+                        failLabel.SetXYText(x, y - boxHeight / 2 - 40, failLabel.Text);
+                        display.StaticGraphics.Add(failLabel, "FailureLabel");
+
+                        // 5. 在红框中心显示超差偏差值
+                        var diffLabel = new CogGraphicLabel();
+                        diffLabel.Text = $"超出公差值：{toleranceDiff:F3}";
+                        diffLabel.Color = CogColorConstants.Red;
+                        diffLabel.Font = new Font("Microsoft Sans Serif", 32, FontStyle.Bold);
+                        diffLabel.Alignment = CogGraphicLabelAlignmentConstants.BaselineCenter;
+                        diffLabel.SetXYText(x, y, diffLabel.Text);
+                        display.StaticGraphics.Add(diffLabel, "ToleranceDiffLabel");
                     }
                 }
             }
@@ -796,7 +788,7 @@ namespace Audio900
             }
             else
             {
-                lblResult.BackColor = Color.Gray;
+                lblResult.BackColor = Color.White;
             }
         }
 
