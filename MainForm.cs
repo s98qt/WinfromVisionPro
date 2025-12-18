@@ -801,8 +801,26 @@ namespace Audio900
             
             foreach(Control ctrl in flpMainSteps.Controls)
             {
-                if (ctrl is Panel p && p.Tag == step)
+                if (ctrl is Panel p)
                 {
+                    if(step == null)
+                    {
+                        // 检测成功 -
+                        p.BackColor = Color.White;
+
+                        // 更新步骤面板中的文字显示
+                        foreach (Control child in p.Controls)
+                        {
+                            if (child is Label lbl && lbl.Text.Contains("步骤"))
+                            {
+                                lbl.Text = $"";
+                                lbl.ForeColor = Color.White;
+                                break;
+                            }
+                        }
+                        //flpMainSteps.ScrollControlIntoView(p);
+                        return;
+                    }
                     // 根据步骤状态设置颜色和文字
                     bool isPassed = step.Status == "检测通过" || step.Status == "检测成功";
                     
@@ -814,7 +832,7 @@ namespace Audio900
                         // 更新步骤面板中的文字显示
                         foreach (Control child in p.Controls)
                         {
-                            if (child is Label lbl && lbl.Text.Contains("步骤"))
+                            if (child is Label lbl && lbl.Text.Contains(""))
                             {
                                 lbl.Text = $"步骤 {step.StepNumber}\r\n{step.Name}\r\n检测成功";
                                 lbl.ForeColor = Color.White;
@@ -822,15 +840,15 @@ namespace Audio900
                             }
                         }
                     }
-                    else
+                    else if(step.Status == "检测失败")
                     {
                         // 检测失败 - 红色（与图一中的红色一致）
-                        p.BackColor = Color.FromArgb(244, 67, 54); // Material Design Red 500
+                        p.BackColor = Color.FromArgb(244, 67, 54);
                         
                         // 更新步骤面板中的文字显示
                         foreach (Control child in p.Controls)
                         {
-                            if (child is Label lbl && lbl.Text.Contains("步骤"))
+                            if (child is Label lbl && lbl.Text.Contains(""))
                             {
                                 lbl.Text = $"步骤 {step.StepNumber}\r\n{step.Name}\r\n检测失败";
                                 lbl.ForeColor = Color.White;
@@ -838,7 +856,7 @@ namespace Audio900
                             }
                         }
                     }
-                    
+
                     flpMainSteps.ScrollControlIntoView(p);
                     break;
                 }
@@ -948,7 +966,7 @@ namespace Audio900
                 
                 // 更新UI状态
                 _isWorkflowRunning = true;
-                
+
                 // 启动工作流
                 await _workflowService.StartWorkflow(
                     _currentTemplate, 
