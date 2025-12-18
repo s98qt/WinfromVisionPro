@@ -60,8 +60,6 @@
             this.lblMesStatus = new System.Windows.Forms.Label();
             this.lblResult = new System.Windows.Forms.Label();
             this.label1 = new System.Windows.Forms.Label();
-            this.btnStop = new System.Windows.Forms.Button();
-            this.btnStart = new System.Windows.Forms.Button();
             this.tlpInputFields.SuspendLayout();
             this.panelTop.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).BeginInit();
@@ -486,20 +484,6 @@
             this.label1.Size = new System.Drawing.Size(100, 23);
             this.label1.TabIndex = 0;
             // 
-            // btnStop
-            // 
-            this.btnStop.Location = new System.Drawing.Point(0, 0);
-            this.btnStop.Name = "btnStop";
-            this.btnStop.Size = new System.Drawing.Size(75, 23);
-            this.btnStop.TabIndex = 0;
-            // 
-            // btnStart
-            // 
-            this.btnStart.Location = new System.Drawing.Point(0, 0);
-            this.btnStart.Name = "btnStart";
-            this.btnStart.Size = new System.Drawing.Size(75, 23);
-            this.btnStart.TabIndex = 0;
-            // 
             // MainForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(11F, 21F);
@@ -561,8 +545,6 @@
         private System.Windows.Forms.TextBox txtFileName;
         private System.Windows.Forms.ComboBox cmbTemplates;
         private System.Windows.Forms.Button btnTemplateManage;
-        private System.Windows.Forms.Button btnStart;
-        private System.Windows.Forms.Button btnStop;
         private System.Windows.Forms.Label label6;
         private System.Windows.Forms.FlowLayoutPanel flpMainSteps;
         private System.Windows.Forms.Panel panelMesStatus;

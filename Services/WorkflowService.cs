@@ -240,6 +240,7 @@ namespace Audio900.Services
             try
             {
                 // 设置为检测中状态（黄色）
+                _logger.Info($"执行了吗？ExecuteWorkStep");
                 UpdateStepStatus(step, "检测中...");
                 UpdateStatus($"开始执行步骤{step.StepNumber} (相机{step.CameraIndex + 1})");
 
@@ -247,12 +248,13 @@ namespace Audio900.Services
                 ICogImage validImage = null;
                 stepPassed = false;
                 int totalCheckCount = 0;
-                const int MAX_TOTAL_CHECKS = 4;  // 总检测次数上限（避免相机刚启动/帧未到时直接退出）
-                const int CHECK_DELAY = 30;         // 每次检测间隔
+                const int MAX_TOTAL_CHECKS = 20;  // 总检测次数上限（需足够支撑2秒稳定检测：2000ms/30ms≈67次）
+                const int CHECK_DELAY = 20;           // 每次检测间隔（毫秒）
                                 
                 // 主检测循环：同时检测稳定性和匹配分数
                 while (!stepPassed && totalCheckCount < MAX_TOTAL_CHECKS)
                 {
+                    _logger.Info($"执行了吗？stepPassed，{stepPassed.ToString()}");
                     // 步骤1：采集图像
                     await ChangeState(WorkflowState.AddingOumitImage);
                     var currentImage = await CaptureOumitImage(step.CameraIndex);
@@ -266,13 +268,14 @@ namespace Audio900.Services
 
                     // 仅在采集到有效图像后才计数，避免无断点时因为取不到帧而快速耗尽次数
                     totalCheckCount++;
-                    
+                    _logger.Info($"执行了吗？totalCheckCount次数，{totalCheckCount}");
                     if (_cameraService != null && _cameraService.IsConnected)
                     {
                         // 步骤2：检查图像稳定性
                         await ChangeState(WorkflowState.CheckingDefect);
                         var hasDefect = await CheckImageDefect(currentImage, step, stabilityState);
 
+                        _logger.Info($"检查图像稳定性？hasDefect，{hasDefect}");
                         if (hasDefect)
                         {
                             // 图像不稳定，释放图像并继续下一次循环
@@ -288,8 +291,9 @@ namespace Audio900.Services
                                       
                     UpdateStatus($"步骤{step.StepNumber}: 图像稳定，视觉检测中...");
                     await ChangeState(WorkflowState.CheckingScore);
-                    
+
                     // 执行视觉检测（包含参数公差比对）
+                    _logger.Info($"执行了吗？执行视觉检测（包含参数公差比对）");
                     var inspection = await RunVisionInspection(currentImage, _stepToolBlocks[step.StepNumber], step);
                     UpdateStatus($"步骤{step.StepNumber}: {inspection.Reason}");
                     
@@ -607,7 +611,6 @@ namespace Audio900.Services
                     state.StableTimer = Stopwatch.StartNew();
                     state.IsStabilityChecking = true;
                     step.Status = "等待图像稳定...";
-                    // 不需要 await Task.Delay(30); 因为外部循环会有 Delay
                     return true; // 继续检测
                 }
 
@@ -616,19 +619,17 @@ namespace Audio900.Services
                 
                 // 更新状态显示
                 step.Status = $"灰度差值: {avgDiff:F2} (已稳定 {state.StableTimer.ElapsedMilliseconds}ms)";
-
+                _logger.Info($"图像不稳定吗？avgDiff，{avgDiff}");
                 // 判断灰度差是否小于阈值
                 if (avgDiff < GRAY_DIFF_THRESHOLD)
                 {
                     // 图像稳定，检查持续时间
+                    _logger.Info($"检查持续时间？state.StableTimer.ElapsedMilliseconds，{state.StableTimer.ElapsedMilliseconds} ");
                     if (state.StableTimer.ElapsedMilliseconds >= STABLE_DURATION_MS)
                     {
                         step.Status = "图像稳定，触发成功";
                         UpdateStatus($"稳定检测通过 (灰度差: {avgDiff:F2})");
-                        
-                        // 清理资源 (保留 state 对象但重置内容，或者由调用方重置)
-                        // ResetStabilityCheck(state); // 这里不重置，因为返回 false 后外部会处理成功逻辑
-                        
+                        _logger.Info($"图像无问题可以继续吗？");
                         return false; // 无问题，可以继续
                     }
                     else
@@ -887,7 +888,8 @@ namespace Audio900.Services
 
                         // 创建运行记录
                         record = toolBlock.CreateLastRunRecord();
-                        
+
+                        _logger.Info($"已运行toolBlock，{record.RecordKey},{record.SubRecords.Count}");
                         // 调试模式：无论成功失败都弹出调试窗口
                         if (EnableDebugPopup)
                         {
@@ -1012,7 +1014,7 @@ namespace Audio900.Services
                 string imageFolderPath = Params.Instance.LocationPicPath;
                 string errorMsg = "";
                 
-                _logger.Info($"开始压缩图片: {imageFolderPath} -> {zipFullPath}");
+                //_logger.Info($"开始压缩图片: {imageFolderPath} -> {zipFullPath}");
                 
                 // 需要确保 ZIPHelper 可用 (TODO: Fix ZIPHelper reference)
                 /*

@@ -87,8 +87,6 @@ namespace Audio900
                 }
                 
                 string sn = txtProductSN.Text.Trim();
-                // 简单的防抖动（可选）
-                await Task.Delay(10);
                 
                 Params.Instance.SN = sn;
                 checkSN(Params.Instance.SN);
@@ -508,7 +506,7 @@ namespace Audio900
                 {
                     // 复用现有窗口，更新内容
                     debugForm.Text = $"VisionPro调试 - Step {e.StepNumber} - {e.Message}";
-                    
+                    LoggerService.Info($"复用，{debugForm.Text}");
                     // 找到现有控件并更新
                     split = debugForm.Controls.OfType<TableLayoutPanel>().FirstOrDefault()?.Controls.OfType<SplitContainer>().FirstOrDefault();
                     if (split != null)
@@ -537,7 +535,7 @@ namespace Audio900
                     debugForm.Activate();
                 }
                 else
-                {
+                {   
                     // 创建新窗口
                     debugForm = new Form();
                     debugForm.Text = $"VisionPro调试 - Step {e.StepNumber} - {e.Message}";
@@ -659,7 +657,9 @@ namespace Audio900
                     var display = _cogDisplays[0];
                     _freezeUntilByCameraIndex[0] = DateTime.Now.AddMilliseconds(2000);
 
-                    // 1. 设置 Record 或 Image
+                    // 准备绘制覆盖层（只在检测失败时绘制红色框）
+                    display.StaticGraphics.Clear();
+
                     // 优先使用 Record，因为它包含所有工具的图形结果（模板匹配框、距离线等）
                     if (e.Record != null)
                     {
@@ -674,13 +674,6 @@ namespace Audio900
                         }
                     }
 
-                    display.Fit(true);
-
-                    // 2. 准备绘制覆盖层（只在检测失败时绘制红色框）
-                    display.StaticGraphics.Clear();
-
-                    // 只有在检测失败时才绘制自定义的红色框和FAIL标签
-                    // 成功时直接使用VPP Record中的绿色图形（模板匹配框、距离线等）
                     if (!e.IsPassed && e.Image != null)
                     {
                         double x = e.Image.Width / 2.0;
@@ -697,20 +690,22 @@ namespace Audio900
 
                         // 3. 失败红框：覆盖整张影像（略留边），圈住整个影像区
                         var rect = new CogRectangleAffine();
-                        double boxWidth = e.Image.Width * 0.98;
-                        double boxHeight = e.Image.Height * 0.98;
+                        double boxWidth =  e.Image.Width -82;
+                        double boxHeight = e.Image.Height -58;
                         rect.SetCenterLengthsRotationSkew(x, y, boxWidth, boxHeight, 0, 0);
                         rect.Color = CogColorConstants.Red;
-                        rect.LineWidthInScreenPixels = 8;
+                        rect.LineWidthInScreenPixels = 5;
                         display.StaticGraphics.Add(rect, "FailureBox");
+                        //display.InteractiveGraphics.Add(rect, "FailureBox",true);
 
-                        // 4. FAIL 标签（顶部居中）
+                        // 4. FAIL 标签（移动到图像内部顶部居中，避免 Fit 时缩小图像）
                         var failLabel = new CogGraphicLabel();
                         failLabel.Text = "FAIL";
                         failLabel.Color = CogColorConstants.Red;
                         failLabel.Font = new Font("Microsoft Sans Serif", 48, FontStyle.Bold);
-                        failLabel.Alignment = CogGraphicLabelAlignmentConstants.BaselineCenter;
-                        failLabel.SetXYText(x, y - boxHeight / 2 - 40, failLabel.Text);
+                        failLabel.Alignment = CogGraphicLabelAlignmentConstants.TopCenter;
+                        failLabel.SetXYText(x, y, failLabel.Text);
+                        //display.InteractiveGraphics.Add(failLabel, "FailureLabel", true);
                         display.StaticGraphics.Add(failLabel, "FailureLabel");
 
                         // 5. 在红框中心显示超差偏差值
@@ -720,8 +715,12 @@ namespace Audio900
                         diffLabel.Font = new Font("Microsoft Sans Serif", 32, FontStyle.Bold);
                         diffLabel.Alignment = CogGraphicLabelAlignmentConstants.BaselineCenter;
                         diffLabel.SetXYText(x, y, diffLabel.Text);
+                        //display.InteractiveGraphics.Add(diffLabel, "ToleranceDiffLabel", true);
                         display.StaticGraphics.Add(diffLabel, "ToleranceDiffLabel");
                     }
+
+                    // 6. 最后调用 Fit 让图像填充显示区域 (移除此处的 Fit，防止 StaticGraphics 导致图像缩小)
+                    //display.Fit(true);
                 }
             }
             catch (Exception ex)
@@ -949,9 +948,6 @@ namespace Audio900
                 
                 // 更新UI状态
                 _isWorkflowRunning = true;
-                btnStart.Enabled = false;
-                btnStop.Enabled = true;
-                cmbTemplates.Enabled = false;
                 
                 // 启动工作流
                 await _workflowService.StartWorkflow(
@@ -966,30 +962,6 @@ namespace Audio900
                 
                 // 恢复UI状态
                 _isWorkflowRunning = false;
-                btnStart.Enabled = true;
-                btnStop.Enabled = false;
-                cmbTemplates.Enabled = true;
-            }
-        }
-
-        /// <summary>
-        /// 停止检测按钮点击
-        /// </summary>
-        private async void btnStop_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                await _workflowService.StopWorkflow();
-                
-                // 恢复UI状态
-                _isWorkflowRunning = false;
-                btnStart.Enabled = true;
-                btnStop.Enabled = false;
-                cmbTemplates.Enabled = true;
-            }
-            catch (Exception ex)
-            {
-                LoggerService.Error(ex, "停止检测失败");
             }
         }
 

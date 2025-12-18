@@ -54,6 +54,8 @@ namespace Audio900.Views
                 {
                     StepNumber = step.StepNumber,
                     Timeout = step.Timeout,
+                    CameraIndex = step.CameraIndex,
+                    IsParallel = step.IsParallel,
                     ShowFailurePrompt = step.ShowFailurePrompt,
                     FailurePromptMessage = step.FailurePromptMessage,
                     Status = step.Status,
@@ -199,7 +201,6 @@ namespace Audio900.Views
             
             foreach(var s in _tempSteps) CreatedTemplate.WorkSteps.Add(s);
             
-            // Save images to disk
             if (!string.IsNullOrEmpty(_templatePath))
             {
                 if (!Directory.Exists(_templatePath)) Directory.CreateDirectory(_templatePath);

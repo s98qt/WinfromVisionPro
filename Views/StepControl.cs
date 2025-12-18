@@ -9,6 +9,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
+using USBSDK_CMOS_Demo;
 
 namespace Audio900.Views
 {
@@ -34,8 +35,9 @@ namespace Audio900.Views
             
             this.Size = new Size(800, 250);
             
-            BindData();
+            
             SetupGrid();
+            BindData();
         }
 
         public void RefreshUI()
@@ -48,11 +50,14 @@ namespace Audio900.Views
             if (Step == null) return;
             groupBoxStep.Text = $"作业步骤 {Step.StepNumber}";
             txtTimeout.Text = Step.Timeout.ToString();
+            cmbCamera.SelectedIndex = Step.CameraIndex;
+            chkParallel.Checked = Step.IsParallel;
             chkShowPrompt.Checked = Step.ShowFailurePrompt;
             txtFailureMessage.Text = Step.FailurePromptMessage;
             
             if (Step.ImageSource != null)
             {
+                pictureBoxPreview.SizeMode = PictureBoxSizeMode.Zoom;
                 pictureBoxPreview.Image = Step.ImageSource;
             }
         }
@@ -125,12 +130,10 @@ namespace Audio900.Views
         {
             int cameraCount = CameraService.GetCameraCount();
             
-            // 多相机模式下的智能提示
             if (cameraCount > 1 && _cameraService != null && _cameraService.IsMultiCameraMode)
             {
-                // 如果是多相机模式，建议启用并行执行
                 chkParallel.Text = "并行执行 (推荐)";
-                chkParallel.ForeColor = System.Drawing.Color.Green;
+                chkParallel.ForeColor = Color.Green;
                 
                 // 如果用户还没有手动设置过，自动启用
                 if (!Step.IsParallel)

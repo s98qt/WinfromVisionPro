@@ -195,6 +195,9 @@
       <AutoGen>True</AutoGen>
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
+    <EmbeddedResource Include="Views\CreateTemplateWindow.resx">
+      <DependentUpon>CreateTemplateWindow.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="Views\StepControl.resx">
       <DependentUpon>StepControl.cs</DependentUpon>
     </EmbeddedResource>
