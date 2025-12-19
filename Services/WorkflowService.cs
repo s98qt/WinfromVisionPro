@@ -228,8 +228,6 @@ namespace Audio900.Services
             // 并行执行批次中的所有步骤
             var tasks = steps.Select(step => ExecuteWorkStep(step)).ToList();
             
-            // 第三点优化：防止 Task.WhenAll 卡死
-            // 添加总体超时保护（例如 30秒），防止某个任务因底层驱动卡死而导致整个流程挂起
             var whenAllTask = Task.WhenAll(tasks);
             var timeoutTask = Task.Delay(30000); // 30秒超时
 
@@ -238,7 +236,18 @@ namespace Audio900.Services
             if (completedTask == timeoutTask)
             {
                 _logger.Error($"严重警告: 步骤批量执行超时（30秒），可能存在任务卡死。涉及步骤: {string.Join(",", steps.Select(s => s.StepNumber))}");
-                // 原本卡死的 Task 仍在后台运行，无法强制 Kill，至少主流程能继续走下去
+                
+                // 强制标记未完成的步骤为失败，确保UI变红
+                foreach (var step in steps)
+                {
+                    if (step.Status == "检测中..." || step.Status == "等待图像稳定...")
+                    {
+                        step.Status = "检测失败";
+                        step.FailureReason = "流程强制超时（任务卡死）";
+                        UpdateStepStatus(step, "检测失败");
+                        OnStepCompleted?.Invoke(step);
+                    }
+                }
             }
             else
             {
@@ -253,6 +262,7 @@ namespace Audio900.Services
         private async Task ExecuteWorkStep(WorkStep step)
         {
             StabilityState stabilityState = new StabilityState();
+            ICogImage lastCapturedImage = null; // 用于记录最后一张图像，防止失败时界面空白
             
             try
             {
@@ -282,6 +292,9 @@ namespace Audio900.Services
                         await Task.Delay(CHECK_DELAY);
                         continue;
                     }
+
+                    // 更新最后一张图像引用
+                    lastCapturedImage = currentImage;
 
                     // 仅在采集到有效图像后才计数，避免无断点时因为取不到帧而快速耗尽次数
                     totalCheckCount++;
@@ -380,6 +393,12 @@ namespace Audio900.Services
                     step.FailureReason = $"检测超时: 已尝试{totalCheckCount}次，未能同时满足稳定性和匹配条件";
                     step.Status = "检测失败";
                     
+                    // 修复：超时失败时，强制更新最后一次采集的图像，防止界面空白
+                    if (lastCapturedImage != null)
+                    {
+                        await UpdateStepImage(step, lastCapturedImage);
+                    }
+
                     // 触发步骤完成事件（失败状态），让UI更新颜色为红色
                     OnStepCompleted?.Invoke(step);
                     
@@ -389,9 +408,6 @@ namespace Audio900.Services
                         string promptMessage = string.IsNullOrWhiteSpace(step.FailurePromptMessage) 
                             ? $"步骤{step.StepNumber}检测失败！\n\n{step.FailureReason}" 
                             : step.FailurePromptMessage;
-                        
-                        // 在多线程环境下，避免阻塞UI主线程，最好通过事件通知UI显示
-                        // 这里简单使用 Invoke (如果是在Service中，最好不要直接弹窗)
                         // MessageBox.Show(promptMessage, "检测失败提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         _logger.Warn($"步骤{step.StepNumber}用户提示: {promptMessage}");
                     }
@@ -410,6 +426,12 @@ namespace Audio900.Services
                 step.FailureReason = $"执行异常: {ex.Message}";
                 step.Status = "检测失败";
                 
+                // 修复：异常失败时，也尝试更新图像
+                if (lastCapturedImage != null)
+                {
+                    await UpdateStepImage(step, lastCapturedImage);
+                }
+
                 // 触发步骤完成事件（失败状态），让UI更新颜色为红色
                 OnStepCompleted?.Invoke(step);
                 

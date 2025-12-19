@@ -467,6 +467,9 @@ namespace Audio900
             return _fallbackCameraCountWhenDetectFailsDefault;
         }
 
+        // 用于限制UI刷新频率的字典
+        private Dictionary<int, DateTime> _lastUiUpdateByCameraIndex = new Dictionary<int, DateTime>();
+
         /// <summary>
         /// 相机图像捕获事件处理
         /// </summary>
@@ -474,6 +477,18 @@ namespace Audio900
         {
             try
             {
+                // 限制 UI 刷新频率为约 15 FPS (60ms)
+                if (!_lastUiUpdateByCameraIndex.ContainsKey(e.CameraIndex))
+                {
+                    _lastUiUpdateByCameraIndex[e.CameraIndex] = DateTime.MinValue;
+                }
+
+                if ((DateTime.Now - _lastUiUpdateByCameraIndex[e.CameraIndex]).TotalMilliseconds < 60)
+                {
+                    return; // 距离上次刷新不足60ms，跳过
+                }
+                _lastUiUpdateByCameraIndex[e.CameraIndex] = DateTime.Now;
+
                 // 第四点优化：使用 BeginInvoke 替代 Invoke
                 // Invoke 是同步阻塞的，如果UI忙碌，会卡住后台采集线程
                 // BeginInvoke 是异步的，直接将消息投递到UI队列后立即返回，不影响采集帧率
