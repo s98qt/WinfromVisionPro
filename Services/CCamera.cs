@@ -887,7 +887,7 @@ namespace USBSDK_CMOS_Demo
         {
             if (m_hDevice == IntPtr.Zero) return;
             m_bPlay = bPlay;
-            Rectangle rect = new Rectangle();
+            Rectangle rect = new Rectangle(0, 0, (int)m_nCollectWidth, (int)m_nCollectHeight);
 
             //try
             //{
@@ -899,13 +899,23 @@ namespace USBSDK_CMOS_Demo
             //    rect = new Rectangle();
             //}
 
-            //rect.Size = new Size(rect.Left + (int)m_nCollectWidth, rect.Top + (int)m_nCollectHeight);
+            try
+            {
+                var host = Control.FromHandle(m_hWnd);
+                if (host != null && !host.IsDisposed)
+                {
+                    rect = host.ClientRectangle;
+                }
+            }
+            catch
+            {
+            }
 
             if (m_bPlay)
             {
                 DllFunction.UVC_SetFrameCallback(m_hDevice, m_pFrameCallBack, this.Handle);
                 DllFunction.UVC_StartView(m_hDevice, "Digital Lab", StylesValul.WS_CHILD | StylesValul.WS_VISIBLE,
-                    0, 0, rect.Right, rect.Bottom, m_hWnd, IntPtr.Zero);
+                    0, 0, rect.Width, rect.Height, m_hWnd, IntPtr.Zero);
             }
             else
             {

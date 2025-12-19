@@ -58,6 +58,8 @@ namespace Audio900.Services
         private static int _camCount = 0;
         private static bool _isSdkInitialized = false;
         private static object _sdkLock = new object();
+        private static int _cachedCameraCount = -1;
+        private static DateTime _lastCountCheckTime = DateTime.MinValue;
         #endregion
 
         #region 事件
@@ -156,17 +158,48 @@ namespace Audio900.Services
                 // 先获取实际检测到的相机数量
                 int cameraCount = GetCameraCount();
 
-                // 尝试初始化检测到的相机
-                for (int i = 0; i < cameraCount; i++)
+                return await InitializeMultiCameras(parentControl, null, cameraCount);
+            }
+            catch (Exception ex)
+            {
+                LoggerService.Error(ex, "初始化多相机失败");
+                return 0;
+            }
+        }
+
+        public async Task<int> InitializeMultiCameras(Control parentControl, IList<IntPtr> previewWindowHandles, int desiredCameraCount)
+        {
+            try
+            {
+                _isMultiCameraMode = true;
+                _parentControl = parentControl;
+                _cameras.Clear();
+
+                if (desiredCameraCount <= 0)
+                {
+                    return 0;
+                }
+
+                for (int i = 0; i < desiredCameraCount; i++)
                 {
                     var camera = new CameraService(i, true);
+
+                    if (previewWindowHandles != null && i < previewWindowHandles.Count)
+                    {
+                        camera.SetWindowHandle(previewWindowHandles[i]);
+                    }
+
+                    if (_videoRecordingService != null)
+                    {
+                        camera.SetVideoRecordingService(_videoRecordingService);
+                    }
+
                     bool success = await camera.InitializeCamera(parentControl);
 
                     if (success)
                     {
                         _cameras.Add(camera);
 
-                        // 订阅相机图像事件并转发
                         int cameraIndex = i;
                         camera.ImageCaptured += (s, image) =>
                         {
@@ -182,7 +215,7 @@ namespace Audio900.Services
                     else
                     {
                         LoggerService.Warn($"相机 {i} 初始化失败");
-                        // 如果第一个相机都失败，直接退出
+
                         if (i == 0)
                         {
                             break;
@@ -248,10 +281,16 @@ namespace Audio900.Services
 
         #region 相机检测
         /// <summary>
-        /// 获取连接的相机数量
+        /// 获取连接的相机数量（带缓存，避免频繁枚举）
         /// </summary>
-        public static int GetCameraCount()
+        public static int GetCameraCount(bool forceRefresh = false)
         {
+            // 使用缓存机制，避免频繁枚举导致性能问题和UI卡顿
+            if (!forceRefresh && _cachedCameraCount >= 0 && (DateTime.Now - _lastCountCheckTime).TotalSeconds < 5)
+            {
+                return _cachedCameraCount;
+            }
+
             int totalCount = 0;
 
             // 1. 检测 iCam (1000系列)
@@ -276,15 +315,54 @@ namespace Audio900.Services
             try
             {
                 int uvcCount = 0;
-                DllFunction.UVC_GetTotalDeviceNum(IntPtr.Zero, ref uvcCount);
+
+                try
+                {
+                    int ret = DllFunction.UVC_GetTotalDeviceNum(IntPtr.Zero, ref uvcCount);
+                    if (ret != 0)
+                    {
+                        uvcCount = 0;
+                    }
+                }
+                catch
+                {
+                    uvcCount = 0;
+                }
+
+                // 如果 UVC_GetTotalDeviceNum 失败，尝试逐个探测（但只探测到第一次失败为止）
+                if (uvcCount <= 0)
+                {
+                    int probeCount = 0;
+                    // 最多尝试8个索引，遇到第一次失败就停止
+                    for (int idx = 1; idx <= 8; idx++)
+                    {
+                        IntPtr h = IntPtr.Zero;
+                        int tmp = idx;
+                        int initRet = DllFunction.UVC_Initialize("UVC_DEMO", ref tmp, ref h);
+                        if (initRet == 0 && h != IntPtr.Zero)
+                        {
+                            probeCount++;
+                            try { DllFunction.UVC_Uninitialize(h); } catch { }
+                        }
+                        else
+                        {
+                            // 第一次失败就停止，不再继续探测
+                            break;
+                        }
+                    }
+
+                    uvcCount = probeCount;
+                }
+
                 if (uvcCount > 0) totalCount += uvcCount;
             }
             catch (Exception ex)
             {
             }
 
-            // 如果两种都没检测到，默认返回1
-            return totalCount > 0 ? totalCount : 1;
+            _cachedCameraCount = totalCount;
+            _lastCountCheckTime = DateTime.Now;
+            return totalCount;
         }
         #endregion
 
@@ -315,13 +393,13 @@ namespace Audio900.Services
                 _parentControl = parentControl;
 
                 // 优先尝试初始化1960型号相机
-                //bool init1960Success = TryInitialize1960Camera();
-                //if (init1960Success)
-                //{
-                //    _cameraType = CameraType.Oumit1960;
-                //    _isInitialized = true;
-                //    return true;
-                //}
+                bool init1960Success = TryInitialize1960Camera();
+                if (init1960Success)
+                {
+                    _cameraType = CameraType.Oumit1960;
+                    _isInitialized = true;
+                    return true;
+                }
 
                 // 1960初始化失败,尝试1000型号
                 bool init1000Success = TryInitialize1000Camera();

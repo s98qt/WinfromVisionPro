@@ -16,6 +16,7 @@ using Cognex.VisionPro.ToolBlock;
 using Newtonsoft.Json;
 using Audio.Services;
 using Params_OUMIT_;
+using System.Configuration;
 using System.Threading;
 using static Audio.Services.PostMes;
 
@@ -28,6 +29,9 @@ namespace Audio900
         private TemplateStorageService _templateStorageService;
         private VideoRecordingService _videoRecordingService;
         private WorkflowService _workflowService;
+
+        private const int _fallbackCameraCountWhenDetectFailsDefault = 2;
+        private EventHandler<ICogImage> _singleCameraImageCapturedHandler;
         
         // 当前模板和步骤
         private WorkTemplate _currentTemplate;
@@ -89,7 +93,7 @@ namespace Audio900
                 string sn = txtProductSN.Text.Trim();
                 
                 Params.Instance.SN = sn;
-                checkSN(Params.Instance.SN);
+                //checkSN(Params.Instance.SN);
 
                 if (_currentTemplate == null)
                 {
@@ -162,15 +166,52 @@ namespace Audio900
 
                 if (detectedCameraCount == 0)
                 {
-                    lblNoCamera.Visible = true;
-                    lblNoCamera.Text = "未检测到相机";
-                    LoggerService.Warn("未检测到相机，将使用离线模式");
-                    return;
+                    detectedCameraCount = GetFallbackCameraCountWhenDetectFails();
+                    LoggerService.Warn($"未检测到相机数量，使用配置相机数量: {detectedCameraCount}");
                 }
 
                 lblNoCamera.Visible = false;
+                try
+                {
+                    foreach (Control c in panelCameraDisplay.Controls)
+                    {
+                        try { c.Dispose(); } catch { }
+                    }
+                }
+                catch
+                {
+                }
+
                 panelCameraDisplay.Controls.Clear();
                 _cogDisplays.Clear();
+
+                _freezeUntilByCameraIndex.Clear();
+
+                try
+                {
+                    if (_cameraService != null)
+                    {
+                        _cameraService.MultiCameraImageCaptured -= OnCameraImageCaptured;
+
+                        if (_singleCameraImageCapturedHandler != null)
+                        {
+                            _cameraService.ImageCaptured -= _singleCameraImageCapturedHandler;
+                            _singleCameraImageCapturedHandler = null;
+                        }
+
+                        if (_cameraService.IsMultiCameraMode)
+                        {
+                            _cameraService.StopAllCameras();
+                        }
+                        else
+                        {
+                            _cameraService.StopCapture();
+                        }
+                    }
+                }
+                catch
+                {
+                }
 
                 int actualCameraCount = 0;
 
@@ -213,6 +254,29 @@ namespace Audio900
         {
             try
             {
+                var display = new CogRecordDisplay
+                {
+                    Dock = DockStyle.Fill,
+                    BackColor = Color.Black,
+                    AutoFit = true
+                };
+
+                var hiddenPreviewHost = new Panel
+                {
+                    Size = new Size(640, 480),
+                    Location = new Point(-2000, -2000),
+                    Visible = false
+                };
+                panelCameraDisplay.Controls.Add(hiddenPreviewHost);
+
+                panelCameraDisplay.Controls.Add(display);
+                display.BringToFront();
+                display.HorizontalScrollBar = false;
+                display.VerticalScrollBar = false;
+                _cogDisplays.Add(display);
+
+                _cameraService.SetWindowHandle(hiddenPreviewHost.Handle);
+
                 // 初始化单个相机
                 bool success = await _cameraService.InitializeCamera(this);
 
@@ -222,20 +286,13 @@ namespace Audio900
                     return 0;
                 }
 
-                // 创建全屏显示
-                var display = new CogRecordDisplay
-                {
-                    Dock = DockStyle.Fill,
-                    BackColor = Color.Black
-                };
-
-                panelCameraDisplay.Controls.Add(display);
-                display.HorizontalScrollBar = false;
-                display.VerticalScrollBar = false;
-                _cogDisplays.Add(display);
-
                 // 订阅单相机图像事件
-                _cameraService.ImageCaptured += (s, image) =>
+                if (_singleCameraImageCapturedHandler != null)
+                {
+                    _cameraService.ImageCaptured -= _singleCameraImageCapturedHandler;
+                }
+
+                _singleCameraImageCapturedHandler = (s, image) =>
                 {
                     OnCameraImageCaptured(s, new CameraImageEventArgs
                     {
@@ -243,6 +300,8 @@ namespace Audio900
                         Image = image
                     });
                 };
+
+                _cameraService.ImageCaptured += _singleCameraImageCapturedHandler;
 
                 // 启动采集
                 _cameraService.StartCapture();
@@ -264,42 +323,60 @@ namespace Audio900
         {
             try
             {
-                // 初始化多相机
-                int actualCount = await _cameraService.InitializeMultiCameras(this);
+                if (cameraCount <= 0)
+                {
+                    return 0;
+                }
 
+                var previewHandles = new List<IntPtr>();
+
+                // 为每个1960相机创建隐藏的预览宿主，仅用于句柄，不占用显示区域
+                for (int i = 0; i < cameraCount; i++)
+                {
+                    var hiddenPreviewHost = new Panel
+                    {
+                        Size = new Size(640, 480),
+                        Location = new Point(-2000 - (i * 10), -2000),
+                        Visible = false
+                    };
+                    panelCameraDisplay.Controls.Add(hiddenPreviewHost);
+                    previewHandles.Add(hiddenPreviewHost.Handle);
+                }
+
+                var tlp = new TableLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    ColumnCount = cameraCount,
+                    RowCount = 1
+                };
+
+                panelCameraDisplay.Controls.Add(tlp);
+
+                for (int i = 0; i < cameraCount; i++)
+                {
+                    tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / cameraCount));
+
+                    var display = new CogRecordDisplay
+                    {
+                        Dock = DockStyle.Fill,
+                        BackColor = Color.Black,
+                        AutoFit = true
+                    };
+
+                    tlp.Controls.Add(display, i, 0);
+
+                    display.HorizontalScrollBar = false;
+                    display.VerticalScrollBar = false;
+                    _cogDisplays.Add(display);
+                }
+
+                int actualCount = await _cameraService.InitializeMultiCameras(this, previewHandles, cameraCount);
                 if (actualCount == 0)
                 {
                     LoggerService.Warn("多相机初始化失败");
                     return 0;
                 }
 
-                // 创建分屏布局
-                var tlp = new TableLayoutPanel
-                {
-                    Dock = DockStyle.Fill,
-                    ColumnCount = actualCount,
-                    RowCount = 1
-                };
-
-                panelCameraDisplay.Controls.Add(tlp);
-
-                for (int i = 0; i < actualCount; i++)
-                {
-                    tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / actualCount));
-
-                    var display = new CogRecordDisplay
-                    {
-                        Dock = DockStyle.Fill,
-                        BackColor = Color.Black
-                    };
-
-                    tlp.Controls.Add(display, i, 0);
-                    display.HorizontalScrollBar = false;
-                    display.VerticalScrollBar = false;
-                    _cogDisplays.Add(display);
-                }
-
-                // 订阅多相机图像事件
                 _cameraService.MultiCameraImageCaptured += OnCameraImageCaptured;
                 _cameraService.StartAllCameras();
 
@@ -313,6 +390,81 @@ namespace Audio900
             }
         }
 
+        private void PrepareUiForNewRun()
+        {
+            _freezeUntilByCameraIndex.Clear();
+
+            foreach (var display in _cogDisplays)
+            {
+                if (display == null) continue;
+                try
+                {
+                    display.StaticGraphics.Clear();
+                    display.InteractiveGraphics.Clear();
+                    display.Record = null;
+                    display.Image = null;
+                }
+                catch
+                {
+                }
+            }
+
+            if (_currentTemplate?.Steps != null)
+            {
+                foreach (var step in _currentTemplate.Steps)
+                {
+                    if (step == null) continue;
+                    step.Status = "";
+                    step.CompletedTime = null;
+                }
+            }
+
+            foreach (Control ctrl in flpMainSteps.Controls)
+            {
+                if (ctrl is Panel p)
+                {
+                    p.BackColor = Color.White;
+
+                    WorkStep step = p.Tag as WorkStep;
+                    foreach (Control child in p.Controls)
+                    {
+                        if (child is Label lbl)
+                        {
+                            if (step != null)
+                            {
+                                lbl.Text = $"步骤 {step.StepNumber}\r\n{step.Name}";
+                            }
+                            lbl.ForeColor = Color.Black;
+                        }
+                        //else if (child is PictureBox pic)
+                        //{
+                        //    pic.Image = null;
+                        //}
+                    }
+                }
+            }
+
+            lblResult.Text = "";
+            lblResult.BackColor = Color.White;
+        }
+
+        private int GetFallbackCameraCountWhenDetectFails()
+        {
+            try
+            {
+                string raw = ConfigurationManager.AppSettings["CameraCountWhenDetectFails"];
+                if (int.TryParse(raw, out int value) && value > 0)
+                {
+                    return value;
+                }
+            }
+            catch
+            {
+            }
+
+            return _fallbackCameraCountWhenDetectFailsDefault;
+        }
+
         /// <summary>
         /// 相机图像捕获事件处理
         /// </summary>
@@ -320,26 +472,35 @@ namespace Audio900
         {
             try
             {
-                if (e.CameraIndex >= 0 && e.CameraIndex < _cogDisplays.Count && e.Image != null)
+                if (InvokeRequired)
                 {
-                    // 在 UI 线程更新图像
-                    if (InvokeRequired)
-                    {
-                        Invoke(new Action<object, CameraImageEventArgs>(OnCameraImageCaptured), sender, e);
-                        return;
-                    }
+                    Invoke(new EventHandler<CameraImageEventArgs>(OnCameraImageCaptured), sender, e);
+                    return;
+                }
 
-                    if (_freezeUntilByCameraIndex.TryGetValue(e.CameraIndex, out DateTime freezeUntil) && DateTime.Now < freezeUntil)
-                    {
-                        return;
-                    }
+                if (e.CameraIndex < 0 || e.CameraIndex >= _cogDisplays.Count)
+                {
+                    return;
+                }
 
-                    var display = _cogDisplays[e.CameraIndex];
-                    // 使用 RecordDisplay 的 Image 属性，或者 Record 属性
-                    // CogRecordDisplay 显示图像通常设置 Image 属性，或设置 Record
-                    // 为了简单显示，设置 Image 即可
+                // 检查该相机是否处于冻结状态（正在显示检测结果）
+                if (_freezeUntilByCameraIndex.ContainsKey(e.CameraIndex))
+                {
+                    if (DateTime.Now < _freezeUntilByCameraIndex[e.CameraIndex])
+                    {
+                        return; // 冻结期间不更新实时画面
+                    }
+                    else
+                    {
+                        _freezeUntilByCameraIndex.Remove(e.CameraIndex);
+                    }
+                }
+
+                var display = _cogDisplays[e.CameraIndex];
+                // 只更新图像，不频繁调用Fit，避免CPU占用率过高
+                if (display.Image != e.Image)
+                {
                     display.Image = e.Image;
-                    display.Fit(true); // 适应窗口大小
                 }
             }
             catch (Exception ex)
@@ -651,14 +812,25 @@ namespace Audio900
 
             try
             {
-                // 默认使用第一个显示控件
+                int cameraIndex = e?.Step?.CameraIndex ?? 0;
+                
+                // 严格验证相机索引，越界直接返回，不要重置为0
+                if (cameraIndex < 0 || cameraIndex >= _cogDisplays.Count)
+                {
+                    LoggerService.Warn($"相机索引越界: {cameraIndex}, 显示区数量: {_cogDisplays.Count}, 步骤: {e?.Step?.StepNumber}");
+                    return;
+                }
+
                 if (_cogDisplays.Count > 0)
                 {
-                    var display = _cogDisplays[0];
-                    _freezeUntilByCameraIndex[0] = DateTime.Now.AddMilliseconds(2000);
+                    var display = _cogDisplays[cameraIndex];
+                    _freezeUntilByCameraIndex[cameraIndex] = DateTime.Now.AddMilliseconds(2000);
+                    
+                    LoggerService.Info($"显示检测结果 - 步骤{e?.Step?.StepNumber}, 相机{cameraIndex}, 结果:{(e.IsPassed ? "通过" : "失败")}");
 
                     // 准备绘制覆盖层（只在检测失败时绘制红色框）
                     display.StaticGraphics.Clear();
+                    display.InteractiveGraphics.Clear();
 
                     // 优先使用 Record，因为它包含所有工具的图形结果（模板匹配框、距离线等）
                     if (e.Record != null)
@@ -798,69 +970,61 @@ namespace Audio900
                 Invoke(new Action<WorkStep>(OnWorkflowStepCompleted), step);
                 return;
             }
-            
-            foreach(Control ctrl in flpMainSteps.Controls)
+
+            if (step == null) return;
+
+            Panel targetPanel = null;
+            foreach (Control ctrl in flpMainSteps.Controls)
             {
                 if (ctrl is Panel p)
                 {
-                    if(step == null)
+                    if (p.Tag is WorkStep panelStep && panelStep.StepNumber == step.StepNumber)
                     {
-                        // 检测成功 -
-                        p.BackColor = Color.White;
-
-                        // 更新步骤面板中的文字显示
-                        foreach (Control child in p.Controls)
-                        {
-                            if (child is Label lbl && lbl.Text.Contains("步骤"))
-                            {
-                                lbl.Text = $"";
-                                lbl.ForeColor = Color.White;
-                                break;
-                            }
-                        }
-                        //flpMainSteps.ScrollControlIntoView(p);
-                        return;
+                        targetPanel = p;
+                        break;
                     }
-                    // 根据步骤状态设置颜色和文字
-                    bool isPassed = step.Status == "检测通过" || step.Status == "检测成功";
-                    
-                    if (isPassed)
-                    {
-                        // 检测成功 - 绿色
-                        p.BackColor = Color.FromArgb(76, 175, 80);
-                        
-                        // 更新步骤面板中的文字显示
-                        foreach (Control child in p.Controls)
-                        {
-                            if (child is Label lbl && lbl.Text.Contains(""))
-                            {
-                                lbl.Text = $"步骤 {step.StepNumber}\r\n{step.Name}\r\n检测成功";
-                                lbl.ForeColor = Color.White;
-                                break;
-                            }
-                        }
-                    }
-                    else if(step.Status == "检测失败")
-                    {
-                        // 检测失败 - 红色（与图一中的红色一致）
-                        p.BackColor = Color.FromArgb(244, 67, 54);
-                        
-                        // 更新步骤面板中的文字显示
-                        foreach (Control child in p.Controls)
-                        {
-                            if (child is Label lbl && lbl.Text.Contains(""))
-                            {
-                                lbl.Text = $"步骤 {step.StepNumber}\r\n{step.Name}\r\n检测失败";
-                                lbl.ForeColor = Color.White;
-                                break;
-                            }
-                        }
-                    }
-
-                    flpMainSteps.ScrollControlIntoView(p);
-                    break;
                 }
             }
+
+            if (targetPanel == null) return;
+
+            bool isPassed = step.Status == "检测通过" || step.Status == "检测成功";
+            if (isPassed)
+            {
+                targetPanel.BackColor = Color.FromArgb(76, 175, 80);
+            }
+            else if (step.Status == "检测失败")
+            {
+                targetPanel.BackColor = Color.FromArgb(244, 67, 54);
+            }
+
+            foreach (Control child in targetPanel.Controls)
+            {
+                if (child is Label lbl)
+                {
+                    if (isPassed)
+                    {
+                        lbl.Text = $"步骤 {step.StepNumber}\r\n{step.Name}\r\n检测成功";
+                        lbl.ForeColor = Color.White;
+                    }
+                    else if (step.Status == "检测失败")
+                    {
+                        lbl.Text = $"步骤 {step.StepNumber}\r\n{step.Name}\r\n检测失败";
+                        lbl.ForeColor = Color.White;
+                    }
+                    else
+                    {
+                        lbl.Text = $"步骤 {step.StepNumber}\r\n{step.Name}";
+                        lbl.ForeColor = Color.Black;
+                    }
+                }
+                else if (child is PictureBox pic)
+                {
+                    pic.Image = step.ImageSource;
+                }
+            }
+
+            flpMainSteps.ScrollControlIntoView(targetPanel);
         }
         
         private void OnWorkflowRecordingStatusChanged(string status, Color color)
@@ -963,6 +1127,8 @@ namespace Audio900
                     MessageBox.Show("请先选择作业模板", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
+
+                PrepareUiForNewRun();
                 
                 // 更新UI状态
                 _isWorkflowRunning = true;
