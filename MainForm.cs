@@ -489,8 +489,6 @@ namespace Audio900
                 }
                 _lastUiUpdateByCameraIndex[e.CameraIndex] = DateTime.Now;
 
-                // 第四点优化：使用 BeginInvoke 替代 Invoke
-                // Invoke 是同步阻塞的，如果UI忙碌，会卡住后台采集线程
                 // BeginInvoke 是异步的，直接将消息投递到UI队列后立即返回，不影响采集帧率
                 if (InvokeRequired)
                 {
@@ -514,6 +512,12 @@ namespace Audio900
                     {
                         _freezeUntilByCameraIndex.Remove(e.CameraIndex);
                     }
+                }
+
+                // 避免纯图像覆盖掉了带有检测框的 Record
+                if (_isWorkflowRunning && _currentTemplate != null)
+                {
+                    return;
                 }
 
                 var display = _cogDisplays[e.CameraIndex];
