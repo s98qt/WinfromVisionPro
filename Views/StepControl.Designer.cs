@@ -98,34 +98,6 @@ namespace Audio900.Views
             this.panelLeft.Size = new System.Drawing.Size(630, 394);
             this.panelLeft.TabIndex = 0;
             // 
-            // lblCamera
-            // 
-            this.lblCamera.AutoSize = true;
-            this.lblCamera.Location = new System.Drawing.Point(260, 18);
-            this.lblCamera.Name = "lblCamera";
-            this.lblCamera.Size = new System.Drawing.Size(52, 21);
-            this.lblCamera.TabIndex = 9;
-            this.lblCamera.Text = "相机:";
-            // 
-            // cmbCamera
-            // 
-            this.cmbCamera.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
-            this.cmbCamera.FormattingEnabled = true;
-            this.cmbCamera.Location = new System.Drawing.Point(320, 15);
-            this.cmbCamera.Name = "cmbCamera";
-            this.cmbCamera.Size = new System.Drawing.Size(120, 29);
-            this.cmbCamera.TabIndex = 10;
-            // 
-            // chkParallel
-            // 
-            this.chkParallel.AutoSize = true;
-            this.chkParallel.Location = new System.Drawing.Point(300, 60);
-            this.chkParallel.Name = "chkParallel";
-            this.chkParallel.Size = new System.Drawing.Size(100, 25);
-            this.chkParallel.TabIndex = 11;
-            this.chkParallel.Text = "并行执行";
-            this.chkParallel.UseVisualStyleBackColor = true;
-            // 
             // btnDeleteStep
             // 
             this.btnDeleteStep.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
@@ -206,6 +178,35 @@ namespace Audio900.Views
             this.btnCapture.Text = "调用Oumit采集一次";
             this.btnCapture.UseVisualStyleBackColor = false;
             this.btnCapture.Click += new System.EventHandler(this.btnCapture_Click);
+            // 
+            // lblCamera
+            // 
+            this.lblCamera.AutoSize = true;
+            this.lblCamera.Location = new System.Drawing.Point(260, 18);
+            this.lblCamera.Name = "lblCamera";
+            this.lblCamera.Size = new System.Drawing.Size(63, 21);
+            this.lblCamera.TabIndex = 9;
+            this.lblCamera.Text = "相机:";
+            // 
+            // cmbCamera
+            // 
+            this.cmbCamera.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.cmbCamera.FormattingEnabled = true;
+            this.cmbCamera.Location = new System.Drawing.Point(320, 15);
+            this.cmbCamera.Name = "cmbCamera";
+            this.cmbCamera.Size = new System.Drawing.Size(120, 29);
+            this.cmbCamera.TabIndex = 10;
+            this.cmbCamera.SelectedIndexChanged += new System.EventHandler(this.cmbCamera_SelectedIndexChanged);
+            // 
+            // chkParallel
+            // 
+            this.chkParallel.AutoSize = true;
+            this.chkParallel.Location = new System.Drawing.Point(300, 60);
+            this.chkParallel.Name = "chkParallel";
+            this.chkParallel.Size = new System.Drawing.Size(120, 25);
+            this.chkParallel.TabIndex = 11;
+            this.chkParallel.Text = "并行执行";
+            this.chkParallel.UseVisualStyleBackColor = true;
             // 
             // pictureBoxPreview
             // 

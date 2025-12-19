@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using USBSDK_CMOS_Demo;
+using System.Configuration;
 
 namespace Audio900.Services
 {
@@ -281,60 +282,17 @@ namespace Audio900.Services
 
         #region 相机检测
         /// <summary>
-        /// 获取连接的相机数量（带缓存，避免频繁枚举）
+        /// 获取配置的相机数量（直接读取配置文件，不进行硬件探测）
         /// </summary>
         public static int GetCameraCount(bool forceRefresh = false)
         {
-            // 使用缓存机制，避免频繁枚举导致性能问题和UI卡顿
-            if (!forceRefresh && _cachedCameraCount >= 0 && (DateTime.Now - _lastCountCheckTime).TotalSeconds < 5)
-            {
-                return _cachedCameraCount;
-            }
-
-            int totalCount = 0;
-
-            // 1. 检测 iCam (1000系列)
             try
             {
-                lock (_sdkLock)
-                {
-                    if (!_isSdkInitialized)
-                    {
-                        _camHandleList = new IntPtr[16];
-                        iCam.Init(_camHandleList, out _camCount);
-                        _isSdkInitialized = true;
-                    }
-                }
-                if (_camCount > 0) totalCount += _camCount;
-            }
-            catch (Exception ex)
-            {
-            }
-
-            // 2. 检测 UVC (1960系列)
-            try
-            {
-                int uvcCount = 0;
-
-                try
-                {
-                    int ret = DllFunction.UVC_GetTotalDeviceNum(IntPtr.Zero, ref uvcCount);
-                    if (ret != 0)
-                    {
-                        uvcCount = 0;
-                    }
-                }
-                catch
-                {
-                    uvcCount = 0;
-                }
-
-                // 如果 UVC_GetTotalDeviceNum 失败，尝试逐个探测（但只探测到第一次失败为止）
-                if (uvcCount <= 0)
+                string raw = ConfigurationManager.AppSettings["CameraCountWhenDetectFails"];
+                if (int.TryParse(raw, out int value) && value > 0)
                 {
                     int probeCount = 0;
-                    // 最多尝试8个索引，遇到第一次失败就停止
-                    for (int idx = 1; idx <= 8; idx++)
+                    for (int idx = 1; idx <= value; idx++)
                     {
                         IntPtr h = IntPtr.Zero;
                         int tmp = idx;
@@ -351,18 +309,14 @@ namespace Audio900.Services
                         }
                     }
 
-                    uvcCount = probeCount;
+                    return value;
                 }
-
-                if (uvcCount > 0) totalCount += uvcCount;
             }
-            catch (Exception ex)
+            catch
             {
+                // ignore
             }
-
-            _cachedCameraCount = totalCount;
-            _lastCountCheckTime = DateTime.Now;
-            return totalCount;
+            return 2; // 默认返回2个
         }
         #endregion
 

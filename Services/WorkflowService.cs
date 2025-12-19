@@ -227,7 +227,24 @@ namespace Audio900.Services
             
             // 并行执行批次中的所有步骤
             var tasks = steps.Select(step => ExecuteWorkStep(step)).ToList();
-            await Task.WhenAll(tasks);
+            
+            // 第三点优化：防止 Task.WhenAll 卡死
+            // 添加总体超时保护（例如 30秒），防止某个任务因底层驱动卡死而导致整个流程挂起
+            var whenAllTask = Task.WhenAll(tasks);
+            var timeoutTask = Task.Delay(30000); // 30秒超时
+
+            var completedTask = await Task.WhenAny(whenAllTask, timeoutTask);
+
+            if (completedTask == timeoutTask)
+            {
+                _logger.Error($"严重警告: 步骤批量执行超时（30秒），可能存在任务卡死。涉及步骤: {string.Join(",", steps.Select(s => s.StepNumber))}");
+                // 原本卡死的 Task 仍在后台运行，无法强制 Kill，至少主流程能继续走下去
+            }
+            else
+            {
+                // 正常完成，await 以抛出可能的异常
+                await whenAllTask;
+            }
         }
 
         /// <summary>
@@ -331,7 +348,8 @@ namespace Audio900.Services
                         _logger.Info($"步骤{step.StepNumber}: 图片已保存 - BMP: {originalBmpPath}, JPEG: {compressedJpgPath}");
 
                         // 在图像上直接渲染匹配效果
-                        validImage = CogSerializer.DeepCopyObject(currentImage) as ICogImage;
+                        // validImage = CogSerializer.DeepCopyObject(currentImage) as ICogImage; // 移除深拷贝，优化性能
+                        validImage = currentImage;
                         
                         UpdateStepStatus(step, "检测通过");
                         await UpdateStepImage(step, validImage);

@@ -150,6 +150,12 @@ namespace Audio900.Views
             }
         }
 
+
+        private void cmbCamera_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            Step.CameraIndex = cmbCamera.SelectedIndex;
+        }
+
         private void txtFailureMessage_TextChanged(object sender, EventArgs e)
         {
             if (Step != null)

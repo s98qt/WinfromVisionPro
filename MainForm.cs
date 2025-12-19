@@ -335,7 +335,7 @@ namespace Audio900
                 {
                     var hiddenPreviewHost = new Panel
                     {
-                        Size = new Size(640, 480),
+                        Size = new Size(640, 640),
                         Location = new Point(-2000 - (i * 10), -2000),
                         Visible = false
                     };
@@ -360,13 +360,15 @@ namespace Audio900
                     {
                         Dock = DockStyle.Fill,
                         BackColor = Color.Black,
-                        AutoFit = true
+                        //
                     };
 
                     tlp.Controls.Add(display, i, 0);
 
                     display.HorizontalScrollBar = false;
                     display.VerticalScrollBar = false;
+                    display.Fit(true);
+                    //display.AutoFit = true;
                     _cogDisplays.Add(display);
                 }
 
@@ -472,9 +474,12 @@ namespace Audio900
         {
             try
             {
+                // 第四点优化：使用 BeginInvoke 替代 Invoke
+                // Invoke 是同步阻塞的，如果UI忙碌，会卡住后台采集线程
+                // BeginInvoke 是异步的，直接将消息投递到UI队列后立即返回，不影响采集帧率
                 if (InvokeRequired)
                 {
-                    Invoke(new EventHandler<CameraImageEventArgs>(OnCameraImageCaptured), sender, e);
+                    BeginInvoke(new EventHandler<CameraImageEventArgs>(OnCameraImageCaptured), sender, e);
                     return;
                 }
 
@@ -642,9 +647,10 @@ namespace Audio900
 
         private void OnToolBlockDebugReady(object sender, ToolBlockDebugEventArgs e)
         {
+            // 优化：使用 BeginInvoke
             if (InvokeRequired)
             {
-                Invoke(new EventHandler<ToolBlockDebugEventArgs>(OnToolBlockDebugReady), sender, e);
+                BeginInvoke(new EventHandler<ToolBlockDebugEventArgs>(OnToolBlockDebugReady), sender, e);
                 return;
             }
 
@@ -804,9 +810,10 @@ namespace Audio900
 
         private void OnInspectionResultReady(object sender, InspectionResultEventArgs e)
         {
+            // 优化：使用 BeginInvoke 避免阻塞工作流线程
             if (InvokeRequired)
             {
-                Invoke(new EventHandler<InspectionResultEventArgs>(OnInspectionResultReady), sender, e);
+                BeginInvoke(new EventHandler<InspectionResultEventArgs>(OnInspectionResultReady), sender, e);
                 return;
             }
 
@@ -965,9 +972,10 @@ namespace Audio900
 
         private void OnWorkflowStepCompleted(WorkStep step)
         {
+            // 优化：使用 BeginInvoke
             if (InvokeRequired)
             {
-                Invoke(new Action<WorkStep>(OnWorkflowStepCompleted), step);
+                BeginInvoke(new Action<WorkStep>(OnWorkflowStepCompleted), step);
                 return;
             }
 
