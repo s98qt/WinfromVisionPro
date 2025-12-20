@@ -87,6 +87,14 @@ namespace Audio900.Services
             }
         }
 
+        /// <summary>
+        /// 获取指定步骤的 ToolBlock（用于实时AR跟踪等场景）
+        /// </summary>
+        public bool GetToolBlock(int stepNumber, out CogToolBlock toolBlock)
+        {
+            return _stepToolBlocks.TryGetValue(stepNumber, out toolBlock);
+        }
+
 
         /// <summary>
         /// 开始工作流程
@@ -236,7 +244,6 @@ namespace Audio900.Services
             if (completedTask == timeoutTask)
             {
                 _logger.Error($"严重警告: 步骤批量执行超时（30秒），可能存在任务卡死。涉及步骤: {string.Join(",", steps.Select(s => s.StepNumber))}");
-                
                 // 强制标记未完成的步骤为失败，确保UI变红
                 foreach (var step in steps)
                 {

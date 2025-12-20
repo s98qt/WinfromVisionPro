@@ -282,6 +282,31 @@ namespace Audio900.Services
 
         #region 相机检测
         /// <summary>
+        /// 获取当前最新的一帧图像（深拷贝，防止多线程冲突）
+        /// 用于实时AR跟踪等需要主动拉取图像的场景
+        /// </summary>
+        public ICogImage GetLatestFrameCopy()
+        {
+            lock (_frameLock)
+            {
+                if (_latestFrame != null)
+                {
+                    // 必须Copy，因为采集线程马上会修改 _latestFrame 的内存
+                    return CopyImage(_latestFrame);
+                }
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 获取多相机模式下的子相机列表（用于AR跟踪等需要访问各个相机的场景）
+        /// </summary>
+        public List<CameraService> GetCameras()
+        {
+            return _isMultiCameraMode ? _cameras : null;
+        }
+
+        /// <summary>
         /// 获取配置的相机数量（直接读取配置文件，不进行硬件探测）
         /// </summary>
         public static int GetCameraCount(bool forceRefresh = false)

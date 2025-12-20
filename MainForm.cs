@@ -13,6 +13,7 @@ using Audio900.Views;
 using Cognex.VisionPro;
 using Cognex.VisionPro.Display;
 using Cognex.VisionPro.ToolBlock;
+using Cognex.VisionPro.PMAlign;
 using Newtonsoft.Json;
 using Audio.Services;
 using Params_OUMIT_;
@@ -44,6 +45,12 @@ namespace Audio900
         
         // 状态标志
         private bool _isWorkflowRunning = false;
+        
+        // 实时AR跟踪相关（支持双相机独立跟踪）
+        private bool[] _isLiveTrackingByCamera = new bool[2]; // 每个相机独立的跟踪状态
+        private Task[] _trackingTaskByCamera = new Task[2]; // 每个相机独立的跟踪任务
+        private CancellationTokenSource[] _trackingCancellationByCamera = new CancellationTokenSource[2]; // 每个相机独立的取消令牌
+        private CogPMAlignTool[] _liveTrackToolByCamera = new CogPMAlignTool[2]; // 每个相机对应的核心工具缓存
 
         public MainForm()
         {
@@ -71,6 +78,269 @@ namespace Audio900
             base.OnShown(e);
             // 移动到OnShown以确保ActiveX控件初始化时窗口句柄已创建
             InitializeMultiCameraUI();
+        }
+
+        /// <summary>
+        /// 实时AR跟踪按钮点击事件 - 相机0
+        /// </summary>
+        private void btnToggleLiveTracking_Click(object sender, EventArgs e)
+        {
+            ToggleLiveTracking(0); // 相机0
+        }
+
+        /// <summary>
+        /// 实时AR跟踪按钮点击事件 - 相机1（可选，双相机时使用）
+        /// </summary>
+        private void btnToggleLiveTracking2_Click(object sender, EventArgs e)
+        {
+            ToggleLiveTracking(1); // 相机1
+        }
+
+        /// <summary>
+        /// 切换指定相机的AR跟踪状态
+        /// </summary>
+        private void ToggleLiveTracking(int cameraIndex)
+        {
+            if (cameraIndex < 0 || cameraIndex >= _isLiveTrackingByCamera.Length)
+                return;
+
+            if (_isLiveTrackingByCamera[cameraIndex])
+            {
+                StopLiveTracking(cameraIndex);
+            }
+            else
+            {
+                StartLiveTracking(cameraIndex);
+            }
+        }
+
+        /// <summary>
+        /// 从 ToolBlock 中提取核心工具（在模板加载后调用）
+        /// </summary>
+        private void PrepareLiveTrackingTools()
+        {
+            if (_currentTemplate == null || _workflowService == null)
+                return;
+
+            // 遍历模板步骤，为每个相机提取对应的工具
+            foreach (var step in _currentTemplate.Steps)
+            {
+                int cameraIndex = step.CameraIndex;
+                if (cameraIndex < 0 || cameraIndex >= _liveTrackToolByCamera.Length)
+                    continue;
+
+                // 已经提取过就跳过
+                if (_liveTrackToolByCamera[cameraIndex] != null)
+                    continue;
+
+                // 从 WorkflowService 获取该步骤的 ToolBlock
+                if (_workflowService.GetToolBlock(step.StepNumber, out CogToolBlock toolBlock))
+                {
+                    // 尝试从 ToolBlock 中查找 PMAlign 工具
+                    // 常见名称：CogPMAlignTool1, PMAlignTool, 等
+                    CogPMAlignTool pmAlignTool = FindPMAlignToolInToolBlock(toolBlock);
+                    
+                    if (pmAlignTool != null)
+                    {
+                        _liveTrackToolByCamera[cameraIndex] = pmAlignTool;
+                        LoggerService.Info($"相机{cameraIndex} AR跟踪工具已缓存：{pmAlignTool.Name}");
+                    }
+                    else
+                    {
+                        LoggerService.Warn($"步骤{step.StepNumber}（相机{cameraIndex}）未找到 CogPMAlignTool");
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 在 ToolBlock 中递归查找 CogPMAlignTool
+        /// </summary>
+        private CogPMAlignTool FindPMAlignToolInToolBlock(CogToolBlock toolBlock)
+        {
+            if (toolBlock == null || toolBlock.Tools == null)
+                return null;
+
+            // 遍历 ToolBlock 中的所有工具
+            foreach (ICogTool tool in toolBlock.Tools)
+            {
+                // 直接匹配 PMAlign 工具
+                if (tool is CogPMAlignTool pmAlign)
+                {
+                    return pmAlign;
+                }
+                
+                // 如果是嵌套的 ToolBlock，递归查找
+                if (tool is CogToolBlock nestedBlock)
+                {
+                    var result = FindPMAlignToolInToolBlock(nestedBlock);
+                    if (result != null)
+                        return result;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// 开启指定相机的实时AR跟踪
+        /// </summary>
+        private void StartLiveTracking(int cameraIndex)
+        {
+            if (cameraIndex < 0 || cameraIndex >= _isLiveTrackingByCamera.Length)
+                return;
+
+            if (_currentTemplate == null)
+            {
+                MessageBox.Show("请先加载模板！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (_cameraService == null || !_cameraService.IsConnected)
+            {
+                MessageBox.Show("相机未连接！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (cameraIndex >= _cogDisplays.Count)
+            {
+                MessageBox.Show($"相机{cameraIndex}显示区域不存在！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            // 准备工具（如果还没有提取）
+            if (_liveTrackToolByCamera[cameraIndex] == null)
+            {
+                PrepareLiveTrackingTools();
+            }
+
+            if (_liveTrackToolByCamera[cameraIndex] == null)
+            {
+                MessageBox.Show($"相机{cameraIndex}未找到可用的 PMAlign 工具！\n请确保模板中包含 CogPMAlignTool。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            _isLiveTrackingByCamera[cameraIndex] = true;
+            UpdateStatus($"相机{cameraIndex} 实时AR跟踪已启动");
+            
+            _trackingCancellationByCamera[cameraIndex] = new CancellationTokenSource();
+            var token = _trackingCancellationByCamera[cameraIndex].Token;
+            var tool = _liveTrackToolByCamera[cameraIndex];
+            
+            // 开启后台任务循环
+            _trackingTaskByCamera[cameraIndex] = Task.Run(async () => 
+            {
+                while (_isLiveTrackingByCamera[cameraIndex] && !token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        // 1. 主动拉取最新图像
+                        ICogImage imageToProcess = null;
+                        
+                        // 双相机模式：需要从对应的相机获取图像
+                        if (_cameraService.ConnectedCameraCount > 1)
+                        {
+                            // 多相机模式：从对应的子相机获取
+                            var cameras = _cameraService.GetCameras();
+                            
+                            if (cameras != null && cameraIndex < cameras.Count)
+                            {
+                                imageToProcess = cameras[cameraIndex].GetLatestFrameCopy();
+                            }
+                        }
+                        else
+                        {
+                            // 单相机模式：直接获取
+                            imageToProcess = _cameraService.GetLatestFrameCopy();
+                        }
+
+                        if (imageToProcess != null)
+                        {
+                            // 2. 【直接运行核心工具】而非整个 ToolBlock
+                            // 设置输入图像
+                            if (imageToProcess is CogImage8Grey greyImage)
+                            {
+                                tool.InputImage = greyImage;
+                            }
+                            else if (imageToProcess is ICogImage cogImg)
+                            {
+                                // 如果不是灰度图，尝试转换或直接赋值
+                                tool.InputImage = cogImg as CogImage8Grey;
+                            }
+                            
+                            if (tool.InputImage != null)
+                            {
+                                // 运行工具（比 ToolBlock.Run() 快得多）
+                                tool.Run();
+
+                                // 3. 生成 AR 效果记录
+                                var record = tool.CreateLastRunRecord();
+
+                                // 4. 刷新 UI
+                                int displayIndex = cameraIndex; // 捕获局部变量
+                                this.BeginInvoke(new Action(() => 
+                                {
+                                    if (displayIndex < _cogDisplays.Count && _isLiveTrackingByCamera[displayIndex])
+                                    {
+                                        // 设置 Record 实现 AR 效果
+                                        _cogDisplays[displayIndex].Record = record;
+                                    }
+                                }));
+                            }
+                            
+                            // 释放图像
+                            if (imageToProcess is IDisposable disp)
+                            {
+                                disp.Dispose();
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerService.Error(ex, $"相机{cameraIndex}实时跟踪异常");
+                    }
+
+                    // 控制帧率，避免 CPU 100%
+                    await Task.Delay(10, token); 
+                }
+            }, token);
+        }
+
+        /// <summary>
+        /// 停止指定相机的实时AR跟踪
+        /// </summary>
+        private void StopLiveTracking(int cameraIndex)
+        {
+            if (cameraIndex < 0 || cameraIndex >= _isLiveTrackingByCamera.Length)
+                return;
+
+            _isLiveTrackingByCamera[cameraIndex] = false;
+            _trackingCancellationByCamera[cameraIndex]?.Cancel();
+            UpdateStatus($"相机{cameraIndex} 实时AR跟踪已停止");
+            
+            // 恢复 UI 状态
+            if (cameraIndex < _cogDisplays.Count)
+            {
+                this.BeginInvoke(new Action(() =>
+                {
+                    // 可选：清空显示或恢复到普通视频流
+                    // _cogDisplays[cameraIndex].Record = null;
+                }));
+            }
+        }
+
+        /// <summary>
+        /// 停止所有相机的AR跟踪
+        /// </summary>
+        private void StopAllLiveTracking()
+        {
+            for (int i = 0; i < _isLiveTrackingByCamera.Length; i++)
+            {
+                if (_isLiveTrackingByCamera[i])
+                {
+                    StopLiveTracking(i);
+                }
+            }
         }
 
         /// <summary>
@@ -515,7 +785,9 @@ namespace Audio900
                 }
 
                 // 避免纯图像覆盖掉了带有检测框的 Record
-                if (_isWorkflowRunning && _currentTemplate != null)
+                // 如果正在工作流检测 OR 该相机正在实时 AR 跟踪，都不要刷新纯图像
+                bool isCameraTracking = e.CameraIndex < _isLiveTrackingByCamera.Length && _isLiveTrackingByCamera[e.CameraIndex];
+                if ((_isWorkflowRunning && _currentTemplate != null) || isCameraTracking)
                 {
                     return;
                 }
@@ -551,6 +823,9 @@ namespace Audio900
                     UpdateStepsDisplay();
                     UpdateStatus($"已加载模板: {templateName}");
                     LoggerService.Info($"已加载模板: {templateName}");
+                    
+                    // 准备AR跟踪工具（提前提取核心工具以提升性能）
+                    PrepareLiveTrackingTools();
                 }
             }
             catch (Exception ex)
