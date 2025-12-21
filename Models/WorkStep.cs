@@ -69,6 +69,16 @@ namespace Audio900.Models
         private bool _isParallel;
         private bool _syncNextStepsEnabled;
         private string _syncNextSteps;
+        /// <summary>
+        /// 是否为AR实时连续检测模式
+        /// </summary>
+        public bool _isArMode  = false;
+
+        /// <summary>
+        /// AR模式下的保持时间（秒）
+        /// 例如：用户动作保持正确2秒后，才算该步骤完成，自动跳到下一步
+        /// </summary>
+        public int _arHoldDuration = 2;
 
         public WorkStep()
         {
@@ -136,6 +146,33 @@ namespace Audio900.Models
             {
                 _timeout = value;
                 OnPropertyChanged(nameof(Timeout));
+            }
+        }
+
+        /// <summary>
+        /// 是否为AR实时连续检测模式
+        /// </summary>
+        public bool IsArMode
+        {
+            get => _isArMode;
+            set
+            {
+                _isArMode = value;
+                OnPropertyChanged(nameof(IsArMode));
+            }
+        }
+
+        /// <summary>
+        /// AR模式下的保持时间（秒）
+        /// 例如：用户动作保持正确2秒后，才算该步骤完成，自动跳到下一步
+        /// </summary>
+        public int ArHoldDuration
+        {
+            get => _arHoldDuration;
+            set
+            {
+                _arHoldDuration = value;
+                OnPropertyChanged(nameof(ArHoldDuration));
             }
         }
 

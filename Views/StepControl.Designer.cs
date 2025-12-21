@@ -39,10 +39,11 @@ namespace Audio900.Views
             this.txtTimeout = new System.Windows.Forms.TextBox();
             this.lblTimeout = new System.Windows.Forms.Label();
             this.btnCapture = new System.Windows.Forms.Button();
-            this.pictureBoxPreview = new System.Windows.Forms.PictureBox();
             this.lblCamera = new System.Windows.Forms.Label();
             this.cmbCamera = new System.Windows.Forms.ComboBox();
             this.chkParallel = new System.Windows.Forms.CheckBox();
+            this.pictureBoxPreview = new System.Windows.Forms.PictureBox();
+            this.chkIsArMode = new System.Windows.Forms.CheckBox();
             this.groupBoxStep.SuspendLayout();
             this.tlpMain.SuspendLayout();
             this.panelLeft.SuspendLayout();
@@ -81,6 +82,7 @@ namespace Audio900.Views
             // 
             // panelLeft
             // 
+            this.panelLeft.Controls.Add(this.chkIsArMode);
             this.panelLeft.Controls.Add(this.btnDeleteStep);
             this.panelLeft.Controls.Add(this.txtFailureMessage);
             this.panelLeft.Controls.Add(this.dgvParams);
@@ -222,6 +224,17 @@ namespace Audio900.Views
             this.pictureBoxPreview.TabStop = false;
             this.pictureBoxPreview.DoubleClick += new System.EventHandler(this.pictureBoxPreview_DoubleClick);
             // 
+            // chkIsArMode
+            // 
+            this.chkIsArMode.AutoSize = true;
+            this.chkIsArMode.Location = new System.Drawing.Point(492, 60);
+            this.chkIsArMode.Name = "chkIsArMode";
+            this.chkIsArMode.Size = new System.Drawing.Size(120, 25);
+            this.chkIsArMode.TabIndex = 12;
+            this.chkIsArMode.Text = "循环检测";
+            this.chkIsArMode.UseVisualStyleBackColor = true;
+            this.chkIsArMode.CheckedChanged += new System.EventHandler(this.chkIsArMode_CheckedChanged);
+            // 
             // StepControl
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(11F, 21F);
@@ -256,5 +269,6 @@ namespace Audio900.Views
         private System.Windows.Forms.TextBox txtFailureMessage;
         private System.Windows.Forms.Button btnDeleteStep;
         private System.Windows.Forms.PictureBox pictureBoxPreview;
+        private System.Windows.Forms.CheckBox chkIsArMode;
     }
 }

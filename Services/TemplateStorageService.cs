@@ -73,6 +73,7 @@ namespace Audio900.Services
                         step.Timeout,
                         step.CameraIndex,
                         step.IsParallel,
+                        step.IsArMode,
                         step.ShowFailurePrompt,
                         step.FailurePromptMessage,
                         step.ToolBlockPath,
@@ -175,6 +176,7 @@ namespace Audio900.Services
                         Timeout = stepMetadata["Timeout"]?.ToObject<int>() ?? 0,
                         CameraIndex = stepMetadata["CameraIndex"]?.ToObject<int>() ?? 0,
                         IsParallel = stepMetadata["IsParallel"]?.ToObject<bool>() ?? false,
+                        IsArMode = stepMetadata["IsArMode"]?.ToObject<bool>() ?? false,
                         ShowFailurePrompt = stepMetadata["ShowFailurePrompt"]?.ToObject<bool>() ?? false,
                         FailurePromptMessage = stepMetadata["FailurePromptMessage"]?.ToString() ?? "",
                         ToolBlockPath = stepMetadata["ToolBlockPath"]?.ToString() ?? ""

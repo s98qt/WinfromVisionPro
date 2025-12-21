@@ -232,10 +232,8 @@ namespace Audio900.Services
         private async Task ExecuteStepBatch(List<WorkStep> steps)
         {
             if (steps == null || steps.Count == 0) return;
-            
-            // 并行执行批次中的所有步骤
+
             var tasks = steps.Select(step => ExecuteWorkStep(step)).ToList();
-            
             var whenAllTask = Task.WhenAll(tasks);
             var timeoutTask = Task.Delay(30000); // 30秒超时
 
@@ -243,14 +241,17 @@ namespace Audio900.Services
 
             if (completedTask == timeoutTask)
             {
-                _logger.Error($"严重警告: 步骤批量执行超时（30秒），可能存在任务卡死。涉及步骤: {string.Join(",", steps.Select(s => s.StepNumber))}");
-                // 强制标记未完成的步骤为失败，确保UI变红
+                _logger.Error($"严重警告: 步骤批量执行超时（30秒）...");
+
+                // 强制标记未完成的步骤为失败
                 foreach (var step in steps)
                 {
-                    if (step.Status == "检测中..." || step.Status == "等待图像稳定...")
+                    // 只要不是 "检测通过"，统统视为超时失败
+                    if (step.Status != "检测通过" && step.Status != "检测成功")
                     {
                         step.Status = "检测失败";
-                        step.FailureReason = "流程强制超时（任务卡死）";
+                        step.FailureReason = "流程强制超时（任务卡死或检测超时）";
+                        // 强制触发UI更新
                         UpdateStepStatus(step, "检测失败");
                         OnStepCompleted?.Invoke(step);
                     }
@@ -258,15 +259,93 @@ namespace Audio900.Services
             }
             else
             {
-                // 正常完成，await 以抛出可能的异常
                 await whenAllTask;
+            }
+        }
+
+        private async Task ExecuteWorkStep(WorkStep step)
+        {
+            try
+            {
+                UpdateStepStatus(step, "准备执行...");
+
+                if (step.IsArMode)
+                {
+                    // 独立的 AR 任务，await 等待它完成
+                    await ExecuteArLoopAsync(step);
+                }
+                else
+                {
+                    // 独立的标准任务
+                    await ExecuteStandardCheckAsync(step);
+                }
+            }
+            catch (Exception ex)
+            {
+                // 统一异常处理
+            }
+        }
+
+        // 独立的 AR 逻辑方法
+        private async Task ExecuteArLoopAsync(WorkStep step)
+        {
+            UpdateStatus($"步骤{step.StepNumber}: 进入AR装配模式...");
+            Stopwatch passTimer = new Stopwatch();
+            ICogImage liveImage = null;
+            // 循环直到步骤完成
+            while (true)
+            {
+                // 1. 获取最新图
+                var camera = _cameraService.GetCamera(step.CameraIndex);
+                if (camera != null)
+                {
+                     liveImage = await Task.Run(() => camera.CaptureSnapshotAsync());
+                }
+
+                if (liveImage != null)
+                {
+                    // 2. 运行快速检测 (建议用 PMAlign)
+                    var result = await RunVisionInspection(liveImage, _stepToolBlocks[step.StepNumber], step);
+
+                    // 3. 刷新 AR 界面
+                    InspectionResultReady?.Invoke(this, new InspectionResultEventArgs
+                    {
+                        Image = liveImage,
+                        Record = result.Record,
+                        IsPassed = result.Passed,
+                        Step = step
+                    });
+
+                    // 4. 业务判定 (保持时间逻辑)
+                    if (result.Passed)
+                    {
+                        if (!passTimer.IsRunning) passTimer.Start();
+                        if (passTimer.Elapsed.TotalSeconds >= step.ArHoldDuration)
+                        {
+                            step.Status = "检测通过";
+                            UpdateStepStatus(step, "检测通过");
+                            break; // 满足条件任务结束
+                        }
+                    }
+                    else
+                    {
+                        passTimer.Reset();
+                    }
+
+                    if (liveImage is IDisposable d) d.Dispose();
+                }
+
+                // 5. 释放 CPU，防止界面卡死
+                await Task.Delay(30);
+
+                // TODO: 建议增加一个 CancellationToken 或超时机制，防止死循环无法退出
             }
         }
 
         /// <summary>
         /// 执行单个作业步骤
         /// </summary>
-        private async Task ExecuteWorkStep(WorkStep step)
+        private async Task ExecuteStandardCheckAsync(WorkStep step)
         {
             StabilityState stabilityState = new StabilityState();
             ICogImage lastCapturedImage = null; // 用于记录最后一张图像，防止失败时界面空白
@@ -912,7 +991,6 @@ namespace Audio900.Services
                     }
                     catch
                     {
-                        // ignore debug popup failures
                     }
                 }
 
@@ -1032,7 +1110,6 @@ namespace Audio900.Services
                         }
                         catch
                         {
-                            // ignore
                         }
                     }
                     return (false, "视觉检测异常", results, null);

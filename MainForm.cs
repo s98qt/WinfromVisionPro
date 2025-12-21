@@ -1449,6 +1449,10 @@ namespace Audio900
                 // 恢复UI状态
                 _isWorkflowRunning = false;
             }
+            finally // 无论成功还是报错，都必须重置状态
+            {
+                _isWorkflowRunning = false;
+            }
         }
 
         /// <summary>

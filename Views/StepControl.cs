@@ -52,6 +52,7 @@ namespace Audio900.Views
             txtTimeout.Text = Step.Timeout.ToString();
             cmbCamera.SelectedIndex = Step.CameraIndex;
             chkParallel.Checked = Step.IsParallel;
+            chkIsArMode.Checked = Step.IsArMode;    
             chkShowPrompt.Checked = Step.ShowFailurePrompt;
             txtFailureMessage.Text = Step.FailurePromptMessage;
             
@@ -91,6 +92,11 @@ namespace Audio900.Views
             // 初始化并行执行选项
             chkParallel.Checked = Step.IsParallel;
             chkParallel.CheckedChanged += (s, e) => Step.IsParallel = chkParallel.Checked;
+        }
+
+        private void chkIsArMode_CheckedChanged(object sender, EventArgs e)
+        {
+            Step.IsArMode = chkIsArMode.Checked;
         }
 
         private void SetupCameraControl()
@@ -400,6 +406,6 @@ namespace Audio900.Views
             {
                 MessageBox.Show($"打开编辑器失败: {ex.Message}");
             }
-        }
+        }  
     }
 }
