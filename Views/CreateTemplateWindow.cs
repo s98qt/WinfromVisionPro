@@ -37,6 +37,10 @@ namespace Audio900.Views
             }
         }
 
+        /// <summary>
+        /// 重新加载编辑作业模板
+        /// </summary>
+        /// <param name="template"></param>
         private void LoadTemplateData(WorkTemplate template)
         {
             txtTemplateName.Text = template.TemplateName;
@@ -44,7 +48,6 @@ namespace Audio900.Views
             txtDescription.Text = template.Description;
             UpdateTemplatePath();
 
-            // Clear default steps
             _tempSteps.Clear();
             flpSteps.Controls.Clear();
 
@@ -55,6 +58,7 @@ namespace Audio900.Views
                     StepNumber = step.StepNumber,
                     Timeout = step.Timeout,
                     CameraIndex = step.CameraIndex,
+                    IsArMode = step.IsArMode,
                     IsParallel = step.IsParallel,
                     ShowFailurePrompt = step.ShowFailurePrompt,
                     FailurePromptMessage = step.FailurePromptMessage,

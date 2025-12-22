@@ -14,6 +14,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -48,6 +49,10 @@ namespace Audio900.Services
 
         // ToolBlock 缓存
         private Dictionary<int, CogToolBlock> _stepToolBlocks = new Dictionary<int, CogToolBlock>();
+
+        // 相机锁机制，防止同一相机并发访问冲突
+        private static Dictionary<int, SemaphoreSlim> _cameraLocks = new Dictionary<int, SemaphoreSlim>();
+        private static object _lockInitLock = new object();
 
         // 图像稳定性判断状态类 (用于并行执行时的线程安全)
         private class StabilityState
@@ -233,15 +238,19 @@ namespace Audio900.Services
         {
             if (steps == null || steps.Count == 0) return;
 
+            // 动态计算批处理超时时间
+            int maxTimeout = steps.Max(s => s.Timeout > 0 ? s.Timeout : 5000);
+            int batchTimeout = maxTimeout + 5000; // 加5秒缓冲
+
             var tasks = steps.Select(step => ExecuteWorkStep(step)).ToList();
             var whenAllTask = Task.WhenAll(tasks);
-            var timeoutTask = Task.Delay(30000); // 30秒超时
+            var timeoutTask = Task.Delay(batchTimeout);
 
             var completedTask = await Task.WhenAny(whenAllTask, timeoutTask);
 
             if (completedTask == timeoutTask)
             {
-                _logger.Error($"严重警告: 步骤批量执行超时（30秒）...");
+                _logger.Error($"严重警告: 步骤批量执行超时（{batchTimeout}ms）...");
 
                 // 强制标记未完成的步骤为失败
                 foreach (var step in steps)
@@ -286,59 +295,182 @@ namespace Audio900.Services
             }
         }
 
-        // 独立的 AR 逻辑方法
+        // 独立的 AR 逻辑
         private async Task ExecuteArLoopAsync(WorkStep step)
         {
             UpdateStatus($"步骤{step.StepNumber}: 进入AR装配模式...");
             Stopwatch passTimer = new Stopwatch();
-            ICogImage liveImage = null;
-            // 循环直到步骤完成
-            while (true)
+            Stopwatch timeoutWatch = Stopwatch.StartNew();
+            int maxRunTime = 60000; // 默认60秒超时
+            
+            int loopCount = 0;
+            int failureCount = 0;
+            const int MAX_CONSECUTIVE_FAILURES = 10;
+            
+            try
             {
-                // 1. 获取最新图
+                // 验证相机和ToolBlock
                 var camera = _cameraService.GetCamera(step.CameraIndex);
-                if (camera != null)
+                if (camera == null)
                 {
-                     liveImage = await Task.Run(() => camera.CaptureSnapshotAsync());
+                    _logger.Error($"步骤{step.StepNumber}: 无法获取相机索引 {step.CameraIndex}");
+                    step.Status = "检测失败";
+                    step.FailureReason = "相机未初始化";
+                    UpdateStepStatus(step, "检测失败");
+                    OnStepCompleted?.Invoke(step);
+                    return;
                 }
 
-                if (liveImage != null)
+                if (!_stepToolBlocks.ContainsKey(step.StepNumber))
                 {
-                    // 2. 运行快速检测 (建议用 PMAlign)
-                    var result = await RunVisionInspection(liveImage, _stepToolBlocks[step.StepNumber], step);
+                    _logger.Error($"步骤{step.StepNumber}: ToolBlock 未加载");
+                    step.Status = "检测失败";
+                    step.FailureReason = "ToolBlock 未加载";
+                    UpdateStepStatus(step, "检测失败");
+                    OnStepCompleted?.Invoke(step);
+                    return;
+                }
 
-                    // 3. 刷新 AR 界面
-                    InspectionResultReady?.Invoke(this, new InspectionResultEventArgs
-                    {
-                        Image = liveImage,
-                        Record = result.Record,
-                        IsPassed = result.Passed,
-                        Step = step
-                    });
+                // 确保相机已启动
+                if (!camera.IsRunning)
+                {
+                    _logger.Warn($"步骤{step.StepNumber}: 相机未启动，尝试启动...");
+                    camera.StartCapture();
+                    await Task.Delay(500); // 等待相机稳定
+                }
 
-                    // 4. 业务判定 (保持时间逻辑)
-                    if (result.Passed)
+                _logger.Info($"步骤{step.StepNumber}: AR循环开始，超时设置={maxRunTime}ms，保持时间={step.ArHoldDuration}秒");
+
+                // 循环直到步骤完成或超时
+                while (timeoutWatch.ElapsedMilliseconds < maxRunTime)
+                {
+                    loopCount++;
+                    ICogImage liveImage = null;
+
+                    try
                     {
-                        if (!passTimer.IsRunning) passTimer.Start();
-                        if (passTimer.Elapsed.TotalSeconds >= step.ArHoldDuration)
+                        // 1. 异步图像采集
+                        liveImage = await Task.Run(() => camera.CaptureSnapshotAsync());
+
+                        if (liveImage == null)
                         {
-                            step.Status = "检测通过";
-                            UpdateStepStatus(step, "检测通过");
-                            break; // 满足条件任务结束
+                            failureCount++;
+                            if (failureCount % 5 == 0)
+                            {
+                                _logger.Warn($"步骤{step.StepNumber}: 图像采集失败 (累计{failureCount}次)");
+                            }
+                            
+                            if (failureCount >= MAX_CONSECUTIVE_FAILURES)
+                            {
+                                _logger.Error($"步骤{step.StepNumber}: 连续{MAX_CONSECUTIVE_FAILURES}次采集失败，退出AR模式");
+                                step.Status = "检测失败";
+                                step.FailureReason = "图像采集持续失败";
+                                UpdateStepStatus(step, "检测失败");
+                                OnStepCompleted?.Invoke(step);
+                                break;
+                            }
+
+                            await Task.Delay(100); // 失败时等待更长时间
+                            continue;
+                        }
+
+                        // 重置失败计数
+                        if (failureCount > 0)
+                        {
+                            _logger.Info($"步骤{step.StepNumber}: 图像采集恢复正常");
+                            failureCount = 0;
+                        }
+
+                        // 2. 运行视觉检测
+                        var result = await RunVisionInspection(liveImage, _stepToolBlocks[step.StepNumber], step);
+
+                        // 3. 刷新 AR 界面（修复点2：不释放图像，交由CogRecordDisplay管理）
+                        InspectionResultReady?.Invoke(this, new InspectionResultEventArgs
+                        {
+                            Image = liveImage,
+                            Record = result.Record,
+                            IsPassed = result.Passed,
+                            Step = step
+                        });
+
+                        // 4. 业务判定 (保持时间逻辑)
+                        if (result.Passed)
+                        {
+                            if (!passTimer.IsRunning)
+                            {
+                                passTimer.Start();
+                                _logger.Info($"步骤{step.StepNumber}: 检测通过，开始计时 (需保持{step.ArHoldDuration}秒)");
+                            }
+
+                            if (passTimer.Elapsed.TotalSeconds >= step.ArHoldDuration)
+                            {
+                                step.Status = "检测通过";
+                                UpdateStepStatus(step, "检测通过");
+                                _logger.Info($"步骤{step.StepNumber}: AR检测完成，保持时间达标 (循环{loopCount}次)");
+                                OnStepCompleted?.Invoke(step);
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            if (passTimer.IsRunning)
+                            {
+                                passTimer.Reset();
+                            }
+                        }
+
+                        // 修复点2：移除 liveImage.Dispose()，图像生命周期由UI控件管理
+                        // VisionPro的CogRecordDisplay会自动管理图像内存
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Error(ex, $"步骤{step.StepNumber}: AR循环异常 (第{loopCount}次)");
+                        failureCount++;
+                        
+                        if (failureCount >= MAX_CONSECUTIVE_FAILURES)
+                        {
+                            step.Status = "检测失败";
+                            step.FailureReason = $"AR检测异常: {ex.Message}";
+                            UpdateStepStatus(step, "检测失败");
+                            OnStepCompleted?.Invoke(step);
+                            break;
                         }
                     }
-                    else
-                    {
-                        passTimer.Reset();
-                    }
-
-                    if (liveImage is IDisposable d) d.Dispose();
+                    await Task.Delay(70);
                 }
 
-                // 5. 释放 CPU，防止界面卡死
-                await Task.Delay(30);
+                // 检查是否超时
+                if (timeoutWatch.ElapsedMilliseconds >= maxRunTime && step.Status != "检测通过")
+                {
+                    _logger.Warn($"步骤{step.StepNumber}: AR检测超时 ({timeoutWatch.ElapsedMilliseconds}ms，循环{loopCount}次)");
+                    step.Status = "检测失败";
+                    step.FailureReason = $"AR检测超时 (运行{loopCount}次循环)";
+                    UpdateStepStatus(step, "检测失败");
+                    OnStepCompleted?.Invoke(step);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, $"步骤{step.StepNumber}: ExecuteArLoopAsync 异常");
+                step.Status = "检测失败";
+                step.FailureReason = $"AR模式异常: {ex.Message}";
+                UpdateStepStatus(step, "检测失败");
+                OnStepCompleted?.Invoke(step);
+            }
+        }
 
-                // TODO: 建议增加一个 CancellationToken 或超时机制，防止死循环无法退出
+        /// <summary>
+        /// 初始化相机锁
+        /// </summary>
+        private void EnsureCameraLockInitialized(int cameraIndex)
+        {
+            lock (_lockInitLock)
+            {
+                if (!_cameraLocks.ContainsKey(cameraIndex))
+                {
+                    _cameraLocks[cameraIndex] = new SemaphoreSlim(1, 1);
+                    _logger.Info($"相机{cameraIndex}锁已初始化");
+                }
             }
         }
 
@@ -347,6 +479,9 @@ namespace Audio900.Services
         /// </summary>
         private async Task ExecuteStandardCheckAsync(WorkStep step)
         {
+            // 确保相机锁已初始化
+            EnsureCameraLockInitialized(step.CameraIndex);
+
             StabilityState stabilityState = new StabilityState();
             ICogImage lastCapturedImage = null; // 用于记录最后一张图像，防止失败时界面空白
             
@@ -357,20 +492,36 @@ namespace Audio900.Services
                 UpdateStepStatus(step, "检测中...");
                 UpdateStatus($"开始执行步骤{step.StepNumber} (相机{step.CameraIndex + 1})");
 
+                // 使用 Stopwatch 配合 step.Timeout 控制循环退出
+                Stopwatch timeoutWatch = Stopwatch.StartNew();
+                int timeoutMs = step.Timeout > 0 ? step.Timeout : 5000; // 默认5秒
+                _logger.Info($"步骤{step.StepNumber} 超时设置: {timeoutMs}ms");
+
                 // 持续采集图像，直到图像稳定 AND 匹配分数都满足
                 ICogImage validImage = null;
                 stepPassed = false;
                 int totalCheckCount = 0;
-                const int MAX_TOTAL_CHECKS = 20;  // 总检测次数上限（需足够支撑2秒稳定检测：2000ms/30ms≈67次）
                 const int CHECK_DELAY = 20;           // 每次检测间隔（毫秒）
                                 
-                // 主检测循环：同时检测稳定性和匹配分数
-                while (!stepPassed && totalCheckCount < MAX_TOTAL_CHECKS)
+                // 【主检测循环】使用时间控制而非次数控制
+                while (!stepPassed && timeoutWatch.ElapsedMilliseconds < timeoutMs)
                 {
                     _logger.Info($"执行了吗？stepPassed，{stepPassed.ToString()}");
-                    // 步骤1：采集图像
-                    await ChangeState(WorkflowState.AddingOumitImage);
-                    var currentImage = await CaptureOumitImage(step.CameraIndex);
+                    totalCheckCount++;
+
+                    // 使用相机锁防止并发冲突
+                    ICogImage currentImage = null;
+                    await _cameraLocks[step.CameraIndex].WaitAsync();
+                    try
+                    {
+                        // 步骤1：采集图像
+                        await ChangeState(WorkflowState.AddingOumitImage);
+                        currentImage = await CaptureOumitImage(step.CameraIndex);
+                    }
+                    finally
+                    {
+                        _cameraLocks[step.CameraIndex].Release();
+                    }
                     
                     if (currentImage == null)
                     {
@@ -379,13 +530,18 @@ namespace Audio900.Services
                         continue;
                     }
 
+                    // 确保旧图像释放，防止内存泄漏
+                    if (lastCapturedImage != null && lastCapturedImage != currentImage)
+                    {
+                        (lastCapturedImage as IDisposable)?.Dispose();
+                    }
                     // 更新最后一张图像引用
                     lastCapturedImage = currentImage;
 
-                    // 仅在采集到有效图像后才计数，避免无断点时因为取不到帧而快速耗尽次数
-                    totalCheckCount++;
                     _logger.Info($"执行了吗？totalCheckCount次数，{totalCheckCount}");
-                    if (_cameraService != null && _cameraService.IsConnected)
+
+                    // 稳定性检测改为可选
+                    if (step.RequireStability && _cameraService != null && _cameraService.IsConnected)
                     {
                         // 步骤2：检查图像稳定性
                         await ChangeState(WorkflowState.CheckingDefect);
@@ -394,12 +550,11 @@ namespace Audio900.Services
                         _logger.Info($"检查图像稳定性？hasDefect，{hasDefect}");
                         if (hasDefect)
                         {
-                            // 图像不稳定，释放图像并继续下一次循环
+                            // 图像不稳定，继续下一次循环
                             if (totalCheckCount % 10 == 0)
                             {
-                                UpdateStatus($"步骤{step.StepNumber}: 等待图像稳定... ({totalCheckCount}/{MAX_TOTAL_CHECKS})");
+                                UpdateStatus($"步骤{step.StepNumber}: 等待图像稳定... (已用{timeoutWatch.ElapsedMilliseconds}ms/{timeoutMs}ms)");
                             }
-
                             await Task.Delay(CHECK_DELAY);
                             continue;
                         }
@@ -471,12 +626,12 @@ namespace Audio900.Services
                 if (!stepPassed)
                 {
                     UpdateStepStatus(step, "检测失败");
-                    UpdateStatus($"步骤{step.StepNumber}: 检测超时，已尝试{totalCheckCount}次");
+                    UpdateStatus($"步骤{step.StepNumber}: 检测超时，已用时{timeoutWatch.ElapsedMilliseconds}ms，尝试{totalCheckCount}次");
                     
                     // 步骤失败，设置总体结果为 NG
                     OverallResultChanged?.Invoke("FAIL");
                     
-                    step.FailureReason = $"检测超时: 已尝试{totalCheckCount}次，未能同时满足稳定性和匹配条件";
+                    step.FailureReason = $"检测超时: 已用时{timeoutWatch.ElapsedMilliseconds}ms，尝试{totalCheckCount}次";
                     step.Status = "检测失败";
                     
                     // 修复：超时失败时，强制更新最后一次采集的图像，防止界面空白

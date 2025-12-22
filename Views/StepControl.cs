@@ -102,8 +102,8 @@ namespace Audio900.Views
         private void SetupCameraControl()
         {
             cmbCamera.Items.Clear();
-            int count = CameraService.GetCameraCount();
-            if (count <= 0) count = 1; // 至少显示一个
+            int count = 2;/*CameraService.GetCameraCount();*/ //加载相机会失败，导致闪退
+            if (count <= 0) count = 1; // 至少显示一个 
             
             for (int i = 0; i < count; i++)
             {
@@ -122,11 +122,11 @@ namespace Audio900.Views
             cmbCamera.SelectedIndexChanged += (s, e) => 
             {
                 Step.CameraIndex = cmbCamera.SelectedIndex;
-                UpdateParallelHint();
+                //UpdateParallelHint();
             };
             
             // 初始化时更新提示
-            UpdateParallelHint();
+            //UpdateParallelHint();
         }
         
         /// <summary>
@@ -134,7 +134,7 @@ namespace Audio900.Views
         /// </summary>
         private void UpdateParallelHint()
         {
-            int cameraCount = CameraService.GetCameraCount();
+            int cameraCount = 2;/*CameraService.GetCameraCount();*/
             
             if (cameraCount > 1 && _cameraService != null && _cameraService.IsMultiCameraMode)
             {

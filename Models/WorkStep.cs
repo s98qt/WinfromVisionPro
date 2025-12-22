@@ -78,7 +78,13 @@ namespace Audio900.Models
         /// AR模式下的保持时间（秒）
         /// 例如：用户动作保持正确2秒后，才算该步骤完成，自动跳到下一步
         /// </summary>
-        public int _arHoldDuration = 2;
+        public int _arHoldDuration = 20;
+
+        /// <summary>
+        /// 是否需要图像稳定性检查（默认 true）
+        /// 对于动作检测场景（如镊子夹入），应设置为 false，允许"边动边测"
+        /// </summary>
+        private bool _requireStability = true;
 
         public WorkStep()
         {
@@ -173,6 +179,20 @@ namespace Audio900.Models
             {
                 _arHoldDuration = value;
                 OnPropertyChanged(nameof(ArHoldDuration));
+            }
+        }
+
+        /// <summary>
+        /// 是否需要图像稳定性检查（默认 true）
+        /// 对于动作检测场景（如镊子夹入），应设置为 false，允许"边动边测"
+        /// </summary>
+        public bool RequireStability
+        {
+            get => _requireStability;
+            set
+            {
+                _requireStability = value;
+                OnPropertyChanged(nameof(RequireStability));
             }
         }
 
