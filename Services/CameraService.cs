@@ -33,7 +33,7 @@ namespace Audio900.Services
         private bool _isRunning;
         private Thread _captureThread;
         private IntPtr _camHandle;
-        private bool _capture;
+        public bool _capture;
         private int _width;
         private int _height;
         private int _bpp;
@@ -47,6 +47,7 @@ namespace Audio900.Services
         private ICogImage _latestFrame = null;
         private VideoRecordingService _videoRecordingService;
         private bool _isInitialized = false;
+        private AutoResetEvent _newFrameSignal = new AutoResetEvent(false);
         #endregion
 
         #region 多相机管理字段
@@ -632,10 +633,16 @@ namespace Audio900.Services
 
                             if (cogImage != null)
                             {
+                                ICogImage safeImageForUi = null;
                                 lock (_frameLock)
                                 {
+                                    // CopyImage 执行了 CopyPixels，生成了深拷贝图像，内存独立安全
                                     _latestFrame = CopyImage(cogImage);
+                                    // 引用这个安全图像用于 UI 更新
+                                    safeImageForUi = _latestFrame;
                                 }
+
+                                _newFrameSignal.Set();
 
                                 if (_videoRecordingService != null && _videoRecordingService.IsRecording)
                                 {
@@ -649,11 +656,15 @@ namespace Audio900.Services
 
                                 if (_parentControl != null && !_parentControl.IsDisposed)
                                 {
+                                    // 注意：这里必须捕获局部变量 safeImageForUi
+                                    var imageToSend = safeImageForUi;
                                     _parentControl.BeginInvoke(new Action(() =>
                                     {
                                         try
                                         {
-                                            ImageCaptured?.Invoke(this, cogImage);
+                                            // 使用安全的深拷贝图像触发事件，而不是原始的 cogImage
+                                            if (imageToSend != null)
+                                                ImageCaptured?.Invoke(this, imageToSend);
                                         }
                                         catch (Exception ex)
                                         {
@@ -754,13 +765,23 @@ namespace Audio900.Services
         {
             try
             {
+
                 if (_isRunning && _latestFrame != null)
                 {
-                    lock (_frameLock)
+                    // 等待新图信号，超时 200ms
+                    if (_newFrameSignal.WaitOne(200))
                     {
-                        var copiedImage = CopyImage(_latestFrame);
-                        return copiedImage;
+                        lock (_frameLock)
+                        {
+                            return CopyImage(_latestFrame);
+                        }
                     }
+                    else
+                    {
+                        // 
+                        LoggerService.Warn("单次拍照取的旧图CaptureSnapshotAsync，说明采集线程可能卡死了");
+                        return null;
+                    }         
                 }
 
                 if (_cameraType == CameraType.Oumit1960)
@@ -772,7 +793,7 @@ namespace Audio900.Services
                     try
                     {
                         _camera1960.StartView();
-                        Thread.Sleep(300);
+                        Thread.Sleep(100); // 300ms
 
                         int w = (int)_camera1960.CollectWidth;
                         int h = (int)_camera1960.CollectHeight;
@@ -793,7 +814,9 @@ namespace Audio900.Services
                         }
 
                         ICogImage snapshot = ConvertRgbBufferToCogImage(rgbBuffer, w, h);
-                        return snapshot;
+                        // 
+                        // 如果直接返回 snapshot，其内部引用的内存将无效，导致黑图或蓝屏
+                        return CopyImage(snapshot);
                     }
                     catch (Exception ex)
                     {
@@ -823,7 +846,8 @@ namespace Audio900.Services
                         }
 
                         ICogImage snapshot = ConvertBGRDataToCogImage(data, w, h);
-                        return snapshot;
+                        // 关键修复：必须返回深拷贝，因为底层rgbBuffer会在finally块中释放，直接返回会导致图像无效（黑图）
+                        return CopyImage(snapshot);
                     }
                     return null;
                 }

@@ -83,36 +83,36 @@ namespace Audio900
         /// <summary>
         /// 实时AR跟踪按钮点击事件 - 相机0
         /// </summary>
-        private void btnToggleLiveTracking_Click(object sender, EventArgs e)
-        {
-            ToggleLiveTracking(0); // 相机0
-        }
+        //private void btnToggleLiveTracking_Click(object sender, EventArgs e)
+        //{
+        //    ToggleLiveTracking(0); // 相机0
+        //}
 
-        /// <summary>
-        /// 实时AR跟踪按钮点击事件 - 相机1（可选，双相机时使用）
-        /// </summary>
-        private void btnToggleLiveTracking2_Click(object sender, EventArgs e)
-        {
-            ToggleLiveTracking(1); // 相机1
-        }
+        ///// <summary>
+        ///// 实时AR跟踪按钮点击事件 - 相机1（可选，双相机时使用）
+        ///// </summary>
+        //private void btnToggleLiveTracking2_Click(object sender, EventArgs e)
+        //{
+        //    ToggleLiveTracking(1); // 相机1
+        //}
 
         /// <summary>
         /// 切换指定相机的AR跟踪状态
         /// </summary>
-        private void ToggleLiveTracking(int cameraIndex)
-        {
-            if (cameraIndex < 0 || cameraIndex >= _isLiveTrackingByCamera.Length)
-                return;
+        //private void ToggleLiveTracking(int cameraIndex)
+        //{
+        //    if (cameraIndex < 0 || cameraIndex >= _isLiveTrackingByCamera.Length)
+        //        return;
 
-            if (_isLiveTrackingByCamera[cameraIndex])
-            {
-                StopLiveTracking(cameraIndex);
-            }
-            else
-            {
-                StartLiveTracking(cameraIndex);
-            }
-        }
+        //    if (_isLiveTrackingByCamera[cameraIndex])
+        //    {
+        //        StopLiveTracking(cameraIndex);
+        //    }
+        //    else
+        //    {
+        //        StartLiveTracking(cameraIndex);
+        //    }
+        //}
 
         /// <summary>
         /// 从 ToolBlock 中提取核心工具（在模板加载后调用）
@@ -185,126 +185,126 @@ namespace Audio900
         /// <summary>
         /// 开启指定相机的实时AR跟踪
         /// </summary>
-        private void StartLiveTracking(int cameraIndex)
-        {
-            if (cameraIndex < 0 || cameraIndex >= _isLiveTrackingByCamera.Length)
-                return;
+        //private void StartLiveTracking(int cameraIndex)
+        //{
+        //    if (cameraIndex < 0 || cameraIndex >= _isLiveTrackingByCamera.Length)
+        //        return;
 
-            if (_currentTemplate == null)
-            {
-                MessageBox.Show("请先加载模板！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
+        //    if (_currentTemplate == null)
+        //    {
+        //        MessageBox.Show("请先加载模板！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        //        return;
+        //    }
 
-            if (_cameraService == null || !_cameraService.IsConnected)
-            {
-                MessageBox.Show("相机未连接！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
+        //    if (_cameraService == null || !_cameraService.IsConnected)
+        //    {
+        //        MessageBox.Show("相机未连接！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        //        return;
+        //    }
 
-            if (cameraIndex >= _cogDisplays.Count)
-            {
-                MessageBox.Show($"相机{cameraIndex}显示区域不存在！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
+        //    if (cameraIndex >= _cogDisplays.Count)
+        //    {
+        //        MessageBox.Show($"相机{cameraIndex}显示区域不存在！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        //        return;
+        //    }
 
-            // 准备工具（如果还没有提取）
-            if (_liveTrackToolByCamera[cameraIndex] == null)
-            {
-                PrepareLiveTrackingTools();
-            }
+        //    // 准备工具（如果还没有提取）
+        //    if (_liveTrackToolByCamera[cameraIndex] == null)
+        //    {
+        //        PrepareLiveTrackingTools();
+        //    }
 
-            if (_liveTrackToolByCamera[cameraIndex] == null)
-            {
-                MessageBox.Show($"相机{cameraIndex}未找到可用的 PMAlign 工具！\n请确保模板中包含 CogPMAlignTool。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
+        //    if (_liveTrackToolByCamera[cameraIndex] == null)
+        //    {
+        //        MessageBox.Show($"相机{cameraIndex}未找到可用的 PMAlign 工具！\n请确保模板中包含 CogPMAlignTool。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        //        return;
+        //    }
 
-            _isLiveTrackingByCamera[cameraIndex] = true;
-            UpdateStatus($"相机{cameraIndex} 实时AR跟踪已启动");
+        //    _isLiveTrackingByCamera[cameraIndex] = true;
+        //    UpdateStatus($"相机{cameraIndex} 实时AR跟踪已启动");
             
-            _trackingCancellationByCamera[cameraIndex] = new CancellationTokenSource();
-            var token = _trackingCancellationByCamera[cameraIndex].Token;
-            var tool = _liveTrackToolByCamera[cameraIndex];
+        //    _trackingCancellationByCamera[cameraIndex] = new CancellationTokenSource();
+        //    var token = _trackingCancellationByCamera[cameraIndex].Token;
+        //    var tool = _liveTrackToolByCamera[cameraIndex];
             
-            // 开启后台任务循环
-            _trackingTaskByCamera[cameraIndex] = Task.Run(async () => 
-            {
-                while (_isLiveTrackingByCamera[cameraIndex] && !token.IsCancellationRequested)
-                {
-                    try
-                    {
-                        // 1. 主动拉取最新图像
-                        ICogImage imageToProcess = null;
+        //    // 开启后台任务循环
+        //    _trackingTaskByCamera[cameraIndex] = Task.Run(async () => 
+        //    {
+        //        while (_isLiveTrackingByCamera[cameraIndex] && !token.IsCancellationRequested)
+        //        {
+        //            try
+        //            {
+        //                // 1. 主动拉取最新图像
+        //                ICogImage imageToProcess = null;
                         
-                        // 双相机模式：需要从对应的相机获取图像
-                        if (_cameraService.ConnectedCameraCount > 1)
-                        {
-                            // 多相机模式：从对应的子相机获取
-                            var cameras = _cameraService.GetCameras();
+        //                // 双相机模式：需要从对应的相机获取图像
+        //                if (_cameraService.ConnectedCameraCount > 1)
+        //                {
+        //                    // 多相机模式：从对应的子相机获取
+        //                    var cameras = _cameraService.GetCameras();
                             
-                            if (cameras != null && cameraIndex < cameras.Count)
-                            {
-                                imageToProcess = cameras[cameraIndex].GetLatestFrameCopy();
-                            }
-                        }
-                        else
-                        {
-                            // 单相机模式：直接获取
-                            imageToProcess = _cameraService.GetLatestFrameCopy();
-                        }
+        //                    if (cameras != null && cameraIndex < cameras.Count)
+        //                    {
+        //                        imageToProcess = cameras[cameraIndex].GetLatestFrameCopy();
+        //                    }
+        //                }
+        //                else
+        //                {
+        //                    // 单相机模式：直接获取
+        //                    imageToProcess = _cameraService.GetLatestFrameCopy();
+        //                }
 
-                        if (imageToProcess != null)
-                        {
-                            // 2. 【直接运行核心工具】而非整个 ToolBlock
-                            // 设置输入图像
-                            if (imageToProcess is CogImage8Grey greyImage)
-                            {
-                                tool.InputImage = greyImage;
-                            }
-                            else if (imageToProcess is ICogImage cogImg)
-                            {
-                                // 如果不是灰度图，尝试转换或直接赋值
-                                tool.InputImage = cogImg as CogImage8Grey;
-                            }
+        //                if (imageToProcess != null)
+        //                {
+        //                    // 2. 【直接运行核心工具】而非整个 ToolBlock
+        //                    // 设置输入图像
+        //                    if (imageToProcess is CogImage8Grey greyImage)
+        //                    {
+        //                        tool.InputImage = greyImage;
+        //                    }
+        //                    else if (imageToProcess is ICogImage cogImg)
+        //                    {
+        //                        // 如果不是灰度图，尝试转换或直接赋值
+        //                        tool.InputImage = cogImg as CogImage8Grey;
+        //                    }
                             
-                            if (tool.InputImage != null)
-                            {
-                                // 运行工具（比 ToolBlock.Run() 快得多）
-                                tool.Run();
+        //                    if (tool.InputImage != null)
+        //                    {
+        //                        // 运行工具（比 ToolBlock.Run() 快得多）
+        //                        tool.Run();
 
-                                // 3. 生成 AR 效果记录
-                                var record = tool.CreateLastRunRecord();
+        //                        // 3. 生成 AR 效果记录
+        //                        var record = tool.CreateLastRunRecord();
 
-                                // 4. 刷新 UI
-                                int displayIndex = cameraIndex; // 捕获局部变量
-                                this.BeginInvoke(new Action(() => 
-                                {
-                                    if (displayIndex < _cogDisplays.Count && _isLiveTrackingByCamera[displayIndex])
-                                    {
-                                        // 设置 Record 实现 AR 效果
-                                        _cogDisplays[displayIndex].Record = record;
-                                    }
-                                }));
-                            }
+        //                        // 4. 刷新 UI
+        //                        int displayIndex = cameraIndex; // 捕获局部变量
+        //                        this.BeginInvoke(new Action(() => 
+        //                        {
+        //                            if (displayIndex < _cogDisplays.Count && _isLiveTrackingByCamera[displayIndex])
+        //                            {
+        //                                // 设置 Record 实现 AR 效果
+        //                                _cogDisplays[displayIndex].Record = record;
+        //                            }
+        //                        }));
+        //                    }
                             
-                            // 释放图像
-                            if (imageToProcess is IDisposable disp)
-                            {
-                                disp.Dispose();
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        LoggerService.Error(ex, $"相机{cameraIndex}实时跟踪异常");
-                    }
+        //                    // 释放图像
+        //                    if (imageToProcess is IDisposable disp)
+        //                    {
+        //                        disp.Dispose();
+        //                    }
+        //                }
+        //            }
+        //            catch (Exception ex)
+        //            {
+        //                LoggerService.Error(ex, $"相机{cameraIndex}实时跟踪异常");
+        //            }
 
-                    // 控制帧率，避免 CPU 100%
-                    await Task.Delay(10, token); 
-                }
-            }, token);
-        }
+        //            // 控制帧率，避免 CPU 100%
+        //            await Task.Delay(10, token); 
+        //        }
+        //    }, token);
+        //}
 
         /// <summary>
         /// 停止指定相机的实时AR跟踪
@@ -601,17 +601,17 @@ namespace Audio900
                 var previewHandles = new List<IntPtr>();
 
                 // 为每个1960相机创建隐藏的预览宿主，仅用于句柄，不占用显示区域
-                for (int i = 0; i < cameraCount; i++)
-                {
-                    var hiddenPreviewHost = new Panel
-                    {
-                        Size = new Size(640, 640),
-                        Location = new Point(-2000 - (i * 10), -2000),
-                        Visible = false
-                    };
-                    panelCameraDisplay.Controls.Add(hiddenPreviewHost);
-                    previewHandles.Add(hiddenPreviewHost.Handle);
-                }
+                //for (int i = 0; i < cameraCount; i++)
+                //{
+                //    var hiddenPreviewHost = new Panel
+                //    {
+                //        Size = new Size(640, 640),
+                //        Location = new Point(-2000 - (i * 10), -2000),
+                //        Visible = false
+                //    };
+                //    panelCameraDisplay.Controls.Add(hiddenPreviewHost);
+                //    previewHandles.Add(hiddenPreviewHost.Handle);
+                //}
 
                 var tlp = new TableLayoutPanel
                 {
@@ -674,7 +674,7 @@ namespace Audio900
                     display.StaticGraphics.Clear();
                     display.InteractiveGraphics.Clear();
                     display.Record = null;
-                    display.Image = null;
+                    //display.Image = null; // 图像不清空
                 }
                 catch
                 {
@@ -739,6 +739,8 @@ namespace Audio900
 
         // 用于限制UI刷新频率的字典
         private Dictionary<int, DateTime> _lastUiUpdateByCameraIndex = new Dictionary<int, DateTime>();
+        // AR模式看门狗：记录每个相机最后一次AR更新的时间
+        private DateTime[] _lastArUpdateTime = { DateTime.MinValue, DateTime.MinValue };
 
         /// <summary>
         /// 相机图像捕获事件处理
@@ -747,6 +749,11 @@ namespace Audio900
         {
             try
             {
+                //if (_workflowService.IsArModeRunning)
+                //{
+                //    return;
+                //}
+
                 // 限制 UI 刷新频率为约 15 FPS (60ms)
                 if (!_lastUiUpdateByCameraIndex.ContainsKey(e.CameraIndex))
                 {
@@ -759,6 +766,17 @@ namespace Audio900
                 }
                 _lastUiUpdateByCameraIndex[e.CameraIndex] = DateTime.Now;
 
+                // AR模式看门狗检查
+                // 如果该相机在过去 500ms 内有 AR 更新（OnInspectionResultReady），则屏蔽实时视频流
+                // 这确保了 AR 模式下的绝对控制权，防止视频流插播导致闪烁、黑屏或覆盖掉AR结果
+                if (e.CameraIndex >= 0 && e.CameraIndex < _lastArUpdateTime.Length)
+                {
+                    if ((DateTime.Now - _lastArUpdateTime[e.CameraIndex]).TotalMilliseconds < 500)
+                    {
+                        return;
+                    }
+                }
+
                 // BeginInvoke 是异步的，直接将消息投递到UI队列后立即返回，不影响采集帧率
                 if (InvokeRequired)
                 {
@@ -770,6 +788,13 @@ namespace Audio900
                 {
                     return;
                 }
+
+                // 【新增】如果该相机正在 AR 模式，完全屏蔽纯视频流，全权交给 InspectionResultReady 来画
+                //if (_isArModeActiveByCamera.ContainsKey(e.CameraIndex) && _isArModeActiveByCamera[e.CameraIndex])
+                //{
+                //    return;
+                //}
+
 
                 // 检查该相机是否处于冻结状态（正在显示检测结果）
                 if (_freezeUntilByCameraIndex.ContainsKey(e.CameraIndex))
@@ -796,7 +821,7 @@ namespace Audio900
                 // 只更新图像，不频繁调用Fit，避免CPU占用率过高
                 if (display.Image != e.Image)
                 {
-                    display.Image = e.Image;
+                     display.Image = e.Image;
                 }
             }
             catch (Exception ex)
@@ -933,6 +958,7 @@ namespace Audio900
             _workflowService.OnStepCompleted += OnWorkflowStepCompleted;
             _workflowService.RecordingStatusChanged += OnWorkflowRecordingStatusChanged;
             _workflowService.InspectionResultReady += OnInspectionResultReady;
+            _workflowService.InTemplateMatching += OnTemplateMatching;
             _workflowService.ToolBlockDebugReady += OnToolBlockDebugReady;
             _workflowService.EnableDebugPopup = chkDebugMode.Checked;
             
@@ -1102,6 +1128,135 @@ namespace Audio900
             }
         }
 
+        // 【全局变量区域】定义字体，避免重复创建导致的内存泄漏
+        private readonly Font _bigFont = new Font("Microsoft Sans Serif", 48, FontStyle.Bold);
+        private readonly Font _midFont = new Font("Microsoft Sans Serif", 32, FontStyle.Bold);
+
+        // 标记某个相机是否正在进行 AR 实时显示
+        private void OnTemplateMatching(object sender, InspectionResultEventArgs e)
+        {
+            // 1. 基础校验
+            if (e?.Step == null) return;
+            int cameraIndex = e.Step.CameraIndex;
+            if (cameraIndex < 0 || cameraIndex >= _cogDisplays.Count) return;
+
+            // 2. 喂狗 (保持 AR 独占)
+            if (cameraIndex < _lastArUpdateTime.Length)
+                _lastArUpdateTime[cameraIndex] = DateTime.Now;
+            SplitContainer split;
+            // 3. UI 更新 (直接投递到 UI 线程)
+            this.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    var display = _cogDisplays[cameraIndex];
+
+                    //split = panelCameraDisplay.Controls.OfType<TableLayoutPanel>().FirstOrDefault()?.Controls.OfType<SplitContainer>().FirstOrDefault();
+                    //if (split != null)
+                    //{
+                    //    display = split.Panel2.Controls.OfType<CogRecordDisplay>().FirstOrDefault();
+                    //}
+               
+
+                    // 4. 清理旧图形
+                    // 只有当 StaticGraphics 有东西时才 Clear
+                   /* if (display.StaticGraphics. > 0)*/ display.StaticGraphics.Clear();
+                    if (display.InteractiveGraphics.Count > 0) display.InteractiveGraphics.Clear();
+
+                    // 5. 更新 Record (绿框 + 图像)
+                    if (e.Record != null)
+                    {
+                        display.Record = e.Record;
+                        display.Image = e.Image;
+                    }
+                    else if (e.Image != null && display.Image != e.Image)
+                    {
+                        display.Image = e.Image;
+                    }
+
+                    // 6. 绘制结果判定 (FAIL 时的红框)
+                    if (!e.IsPassed && e.Image != null)
+                    {
+                        double w = e.Image.Width;
+                        double h = e.Image.Height;
+                        double x = w / 2.0;
+                        double y = h / 2.0;
+
+                        //// 不要画遮挡视线的图形，只画边框
+                        //var rect = new CogRectangleAffine();
+                        //// 稍微往里缩一点，保证边框能被看见
+                        //rect.SetCenterLengthsRotationSkew(x, y, w - 50, h - 50, 0, 0);
+                        //rect.Color = CogColorConstants.Red;
+                        //rect.LineWidthInScreenPixels = 10; // 边框加粗
+                        //rect.LineStyle = CogGraphicLineStyleConstants.Solid; // 实线
+
+                        //display.StaticGraphics.Add(rect, "Status");
+
+                        //// 绘制 FAIL 文字
+                        //var failLabel = new CogGraphicLabel();
+                        //failLabel.Text = "调整中..."; // 建议改成 "调整中" 而不是 FAIL，减轻焦虑
+                        //failLabel.Color = CogColorConstants.Red;
+                        //failLabel.Font = _bigFont; // --- 核心改动 3：使用全局 Font 对象 ---
+                        //failLabel.Alignment = CogGraphicLabelAlignmentConstants.TopCenter;
+                        //failLabel.SetXYText(x, 100, failLabel.Text); // 放在顶部，不挡中间
+                        //display.StaticGraphics.Add(failLabel, "Status");
+
+                        // 显示偏差值
+                        if (e.Results != null && TryGetResultValue(e.Results, out double diff, "ToleranceDiff"))
+                        {
+                            var diffLabel = new CogGraphicLabel();
+                            diffLabel.Text = $"偏差: {diff:F3}";
+                            diffLabel.Color = CogColorConstants.Red;
+                            diffLabel.Font = _midFont; // 使用全局 Font
+                            diffLabel.Alignment = CogGraphicLabelAlignmentConstants.BottomCenter;
+                            diffLabel.SetXYText(x, h - 100, diffLabel.Text); // 放在底部
+                            display.StaticGraphics.Add(diffLabel, "Status");
+                        }
+                    }
+                    else
+                    {
+                        // PASS 状态 
+                        // 
+                        //var passLabel = new CogGraphicLabel();
+                        //passLabel.Text = "PASS";
+                        //passLabel.Color = CogColorConstants.Green;
+                        //passLabel.Font = _bigFont;
+                        //passLabel.Alignment = CogGraphicLabelAlignmentConstants.TopRight;
+                        //passLabel.SetXYText(e.Image.Width /*/ 2.0*/, 100, "PASS");
+                        //display.StaticGraphics.Add(passLabel, "Status");
+                    }
+
+
+                    //if (e.IsPassed)
+                    //{
+                    //    // --- 成功状态 ---
+                    //    var passLabel = new CogGraphicLabel();
+                    //    passLabel.Text = "OK";
+                    //    passLabel.Color = CogColorConstants.Green;
+                    //    passLabel.Font = new Font("Microsoft Sans Serif", 32, FontStyle.Bold);
+                    //    passLabel.Alignment = CogGraphicLabelAlignmentConstants.TopRight; // 显示在角落
+                    //    passLabel.SetXYText(10, 10, ""); // 坐标需根据实际情况调整
+                    //    display.StaticGraphics.Add(passLabel, "Status");
+                    //}
+                    //else
+                    //{
+                    //    var diffLabel = new CogGraphicLabel();
+                    //    // 显示实时偏差
+                    //    diffLabel.Text = $"偏差: {toleranceDiff:F3}";
+                    //    diffLabel.Color = CogColorConstants.Yellow; // 用黄色提示正在调整
+                    //    diffLabel.Font = new Font("Microsoft Sans Serif", 24, FontStyle.Bold);
+                    //    diffLabel.Alignment = CogGraphicLabelAlignmentConstants.BottomCenter;
+                    //    // 放在画面底部，不遮挡主体
+                    //    diffLabel.SetXYText(e.Image.Width / 2, e.Image.Height - 50, "");
+                    //    display.StaticGraphics.Add(diffLabel, "DiffData");
+                    //}
+
+                }
+                catch { }
+            }));
+        }
+
+        //private Dictionary<int, bool> _isArModeActiveByCamera = new Dictionary<int, bool>();
         private void OnInspectionResultReady(object sender, InspectionResultEventArgs e)
         {
             // 优化：使用 BeginInvoke 避免阻塞工作流线程
@@ -1114,7 +1269,14 @@ namespace Audio900
             try
             {
                 int cameraIndex = e?.Step?.CameraIndex ?? 0;
-                
+
+                // 【关键修改】更新 AR 看门狗时间
+                // 这会通知 OnCameraImageCaptured 在接下来的 500ms 内不要刷新视频流
+                if (cameraIndex >= 0 && cameraIndex < _lastArUpdateTime.Length)
+                {
+                    _lastArUpdateTime[cameraIndex] = DateTime.Now;
+                }
+
                 // 严格验证相机索引，越界直接返回，不要重置为0
                 if (cameraIndex < 0 || cameraIndex >= _cogDisplays.Count)
                 {
@@ -1124,73 +1286,76 @@ namespace Audio900
 
                 if (_cogDisplays.Count > 0)
                 {
-                    var display = _cogDisplays[cameraIndex];
-                    _freezeUntilByCameraIndex[cameraIndex] = DateTime.Now.AddMilliseconds(2000);
-                    
-                    LoggerService.Info($"显示检测结果 - 步骤{e?.Step?.StepNumber}, 相机{cameraIndex}, 结果:{(e.IsPassed ? "通过" : "失败")}");
-
-                    // 准备绘制覆盖层（只在检测失败时绘制红色框）
-                    display.StaticGraphics.Clear();
-                    display.InteractiveGraphics.Clear();
-
-                    // 优先使用 Record，因为它包含所有工具的图形结果（模板匹配框、距离线等）
-                    if (e.Record != null)
+                    this.BeginInvoke(new Action(() =>                   
                     {
-                        display.Record = e.Record;
-                    }
-                    else if (e.Image != null)
-                    {
-                         // 只有当图像对象不同时才更新
-                        if (display.Image != e.Image)
+                        var display = _cogDisplays[cameraIndex];
+
+                        LoggerService.Info($"显示检测结果 - 步骤{e?.Step?.StepNumber}, 相机{cameraIndex}, 结果:{(e.IsPassed ? "通过" : "失败")}");
+                        // 准备绘制覆盖层（只在检测失败时绘制红色框）
+                        display.StaticGraphics.Clear();
+                        display.InteractiveGraphics.Clear();
+
+                        // 优先使用 Record，因为它包含所有工具的图形结果（模板匹配框、距离线等）
+                        if (e.Record != null)
                         {
-                            display.Image = e.Image;
+                            display.Record = e.Record;
                         }
-                    }
-
-                    if (!e.IsPassed && e.Image != null)
-                    {
-                        double x = e.Image.Width / 2.0;
-                        double y = e.Image.Height / 2.0;
-                        double toleranceDiff = 0;
-
-                        if (e.Results != null)
+                        else if (e.Image != null)
                         {
-                            if (TryGetResultValue(e.Results, out double diff, "ToleranceDiff"))
+                            // 只有当图像对象不同时才更新
+                            if (display.Image != e.Image)
                             {
-                                toleranceDiff = diff;
+                                display.Image = e.Image;
                             }
                         }
 
-                        // 3. 失败红框：覆盖整张影像（略留边），圈住整个影像区
-                        var rect = new CogRectangleAffine();
-                        double boxWidth =  e.Image.Width -82;
-                        double boxHeight = e.Image.Height -58;
-                        rect.SetCenterLengthsRotationSkew(x, y, boxWidth, boxHeight, 0, 0);
-                        rect.Color = CogColorConstants.Red;
-                        rect.LineWidthInScreenPixels = 5;
-                        display.StaticGraphics.Add(rect, "FailureBox");
-                        //display.InteractiveGraphics.Add(rect, "FailureBox",true);
+                        if (!e.IsPassed && e.Image != null)
+                        {
+                            double x = 0;
+                            double y = 300;
+                            double toleranceDiff = 0;
 
-                        // 4. FAIL 标签（移动到图像内部顶部居中，避免 Fit 时缩小图像）
-                        var failLabel = new CogGraphicLabel();
-                        failLabel.Text = "FAIL";
-                        failLabel.Color = CogColorConstants.Red;
-                        failLabel.Font = new Font("Microsoft Sans Serif", 48, FontStyle.Bold);
-                        failLabel.Alignment = CogGraphicLabelAlignmentConstants.TopCenter;
-                        failLabel.SetXYText(x, y, failLabel.Text);
-                        //display.InteractiveGraphics.Add(failLabel, "FailureLabel", true);
-                        display.StaticGraphics.Add(failLabel, "FailureLabel");
+                            if (e.Results != null)
+                            {
+                                if (TryGetResultValue(e.Results, out double diff, "ToleranceDiff"))
+                                {
+                                    toleranceDiff = diff;
+                                }
+                            }
 
-                        // 5. 在红框中心显示超差偏差值
-                        var diffLabel = new CogGraphicLabel();
-                        diffLabel.Text = $"超出公差值：{toleranceDiff:F3}";
-                        diffLabel.Color = CogColorConstants.Red;
-                        diffLabel.Font = new Font("Microsoft Sans Serif", 32, FontStyle.Bold);
-                        diffLabel.Alignment = CogGraphicLabelAlignmentConstants.BaselineCenter;
-                        diffLabel.SetXYText(x, y, diffLabel.Text);
-                        //display.InteractiveGraphics.Add(diffLabel, "ToleranceDiffLabel", true);
-                        display.StaticGraphics.Add(diffLabel, "ToleranceDiffLabel");
-                    }
+                            //// 3. 失败红框：覆盖整张影像（略留边），圈住整个影像区
+                            //var rect = new CogRectangleAffine();
+                            //double boxWidth = e.Image.Width - 82;
+                            //double boxHeight = e.Image.Height - 58;
+                            //rect.SetCenterLengthsRotationSkew(x, y, boxWidth, boxHeight, 0, 0);
+                            //rect.Color = CogColorConstants.Red;
+                            //rect.LineWidthInScreenPixels = 5;
+                            //display.StaticGraphics.Add(rect, "FailureBox");
+                            ////display.InteractiveGraphics.Add(rect, "FailureBox",true);
+
+                            //// 4. FAIL 标签（移动到图像内部顶部居中，避免 Fit 时缩小图像）
+                            //var failLabel = new CogGraphicLabel();
+                            //failLabel.Text = "FAIL";
+                            //failLabel.Color = CogColorConstants.Red;
+                            //failLabel.Font = new Font("Microsoft Sans Serif", 48, FontStyle.Bold);
+                            //failLabel.Alignment = CogGraphicLabelAlignmentConstants.TopCenter;
+                            //failLabel.SetXYText(x, y, failLabel.Text);
+                            ////display.InteractiveGraphics.Add(failLabel, "FailureLabel", true);
+                            //display.StaticGraphics.Add(failLabel, "FailureLabel");
+
+                            // 5. 在红框中心显示超差偏差值
+                            var diffLabel = new CogGraphicLabel();
+                            diffLabel.Text = $"超出公差值：{toleranceDiff:F3}";
+                            diffLabel.Color = CogColorConstants.Red;
+                            diffLabel.Font = new Font("Microsoft Sans Serif", 32, FontStyle.Bold);
+                            diffLabel.Alignment = CogGraphicLabelAlignmentConstants.BottomLeft;
+                            diffLabel.SetXYText(x, y, diffLabel.Text);
+                            //display.InteractiveGraphics.Add(diffLabel, "ToleranceDiffLabel", true);
+                            display.StaticGraphics.Add(diffLabel, "ToleranceDiffLabel");
+                        }
+
+                    }));
+                   
 
                     // 6. 最后调用 Fit 让图像填充显示区域 (移除此处的 Fit，防止 StaticGraphics 导致图像缩小)
                     //display.Fit(true);
@@ -1412,7 +1577,7 @@ namespace Audio900
         /// <summary>
         /// 开始检测按钮点击
         /// </summary>
-        private async void btnStart_Click(object sender, EventArgs e)
+        private  void btnStart_Click(object sender, EventArgs e)
         {
             try
             {
@@ -1436,7 +1601,7 @@ namespace Audio900
                 _isWorkflowRunning = true;
 
                 // 启动工作流
-                await _workflowService.StartWorkflow(
+                 _workflowService.StartWorkflow(
                     _currentTemplate, 
                     txtProductSN.Text, 
                     txtEmployeeId.Text);
