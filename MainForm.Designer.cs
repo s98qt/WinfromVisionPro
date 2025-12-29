@@ -249,7 +249,7 @@
             this.panelTop.Location = new System.Drawing.Point(0, 0);
             this.panelTop.Margin = new System.Windows.Forms.Padding(2, 4, 2, 4);
             this.panelTop.Name = "panelTop";
-            this.panelTop.Size = new System.Drawing.Size(1660, 61);
+            this.panelTop.Size = new System.Drawing.Size(1659, 61);
             this.panelTop.TabIndex = 0;
             // 
             // chkDebugMode
@@ -273,7 +273,7 @@
             this.lblCameraVideoStatus.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
             this.lblCameraVideoStatus.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
             this.lblCameraVideoStatus.ForeColor = System.Drawing.Color.White;
-            this.lblCameraVideoStatus.Location = new System.Drawing.Point(1325, 9);
+            this.lblCameraVideoStatus.Location = new System.Drawing.Point(1326, 9);
             this.lblCameraVideoStatus.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblCameraVideoStatus.Name = "lblCameraVideoStatus";
             this.lblCameraVideoStatus.Size = new System.Drawing.Size(154, 39);
@@ -343,7 +343,7 @@
             this.statusStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.toolStripStatusLabel1,
             this.toolStripStatusLabelFPS});
-            this.statusStrip1.Location = new System.Drawing.Point(0, 801);
+            this.statusStrip1.Location = new System.Drawing.Point(0, 802);
             this.statusStrip1.Name = "statusStrip1";
             this.statusStrip1.Padding = new System.Windows.Forms.Padding(2, 0, 12, 0);
             this.statusStrip1.Size = new System.Drawing.Size(1339, 37);
@@ -488,7 +488,7 @@
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(11F, 21F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(1660, 899);
+            this.ClientSize = new System.Drawing.Size(1659, 900);
             this.Controls.Add(this.splitContainer1);
             this.Controls.Add(this.panelTop);
             this.Margin = new System.Windows.Forms.Padding(2, 4, 2, 4);

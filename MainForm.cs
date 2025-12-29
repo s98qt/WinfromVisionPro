@@ -712,6 +712,13 @@ namespace Audio900
                     return;
                 }
 
+                // 【新增】如果该相机正在 AR 模式，完全屏蔽纯视频流，全权交给 InspectionResultReady 来画
+                //if (_isArModeActiveByCamera.ContainsKey(e.CameraIndex) && _isArModeActiveByCamera[e.CameraIndex])
+                //{
+                //    return;
+                //}
+
+
                 // 检查该相机是否处于冻结状态（正在显示检测结果）
                 if (_freezeUntilByCameraIndex.ContainsKey(e.CameraIndex))
                 {

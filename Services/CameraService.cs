@@ -634,6 +634,7 @@ namespace Audio900.Services
                                 ICogImage safeImageForUi = null;
                                 lock (_frameLock)
                                 {
+                                    // CopyImage 执行了 CopyPixels，生成了深拷贝图像，内存独立安全
                                     _latestFrame = CopyImage(cogImage);
                                     safeImageForUi = _latestFrame;
                                 }

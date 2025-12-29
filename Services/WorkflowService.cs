@@ -207,17 +207,17 @@ namespace Audio900.Services
 
                 IsArModeRunning = false;
                 // 保存数据
-                await ChangeState(WorkflowState.SavingData);
-                await SaveImageAndVideo();
+                ChangeState(WorkflowState.SavingData);
+                SaveImageAndVideo();
                 UpdateStatus("数据已保存");
 
                 // 上传MES
-                await ChangeState(WorkflowState.UploadingMES);
-                await UploadToMES();
+                ChangeState(WorkflowState.UploadingMES);
+                UploadToMES();
                 UpdateStatus("已上传MES");
 
                 // 完成
-                await ChangeState(WorkflowState.Idle);
+                ChangeState(WorkflowState.Idle);
                 UpdateStatus("作业完成");
 
                 // 检查所有步骤状态，确认最终结果
