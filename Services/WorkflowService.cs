@@ -26,7 +26,7 @@ namespace Audio900.Services
     public class WorkflowService
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
-        
+
         public enum WorkflowState
         {
             Idle,           // 空闲
@@ -43,7 +43,7 @@ namespace Audio900.Services
         private CameraService _cameraService;
         private WorkTemplate _currentTemplate;
         private VideoRecordingService _videoRecordingService;
-        
+
         // 离线模式测试图片索引
         private int _offlineImageIndex = 0;
 
@@ -52,7 +52,7 @@ namespace Audio900.Services
 
         // 相机锁机制，防止同一相机并发访问冲突
         private static Dictionary<int, SemaphoreSlim> _cameraLocks = new Dictionary<int, SemaphoreSlim>();
-        private static object _lockInitLock = new object();
+        public  object _lockInitLock = new object();
 
         // 图像稳定性判断状态类 (用于并行执行时的线程安全)
         private class StabilityState
@@ -65,25 +65,28 @@ namespace Audio900.Services
         private const double GRAY_DIFF_THRESHOLD = 4.0;  // 灰度差阈值
         private const int STABLE_DURATION_MS = 2000;     // 稳定持续时间（毫秒）
         bool stepPassed = false;
+        public volatile bool IsArModeRunning = false; 
+       
 
         public event EventHandler<WorkflowState> StateChanged;
         public event EventHandler<string> StatusMessageChanged;
         public event Action<WorkStep> OnStepCompleted;
         public event Action<string> OverallResultChanged;
         public event Action<string, Color> RecordingStatusChanged; // status, color
-        
+
         // 新增：检测结果事件，携带图像和图形
         public event EventHandler<InspectionResultEventArgs> InspectionResultReady;
+        public event EventHandler<InspectionResultEventArgs> InTemplateMatching; // 模板匹配
 
         public event EventHandler<ToolBlockDebugEventArgs> ToolBlockDebugReady;
 
         public bool EnableDebugPopup { get; set; }
-        
+
         public WorkflowService(CameraService cameraService)
         {
             _cameraService = cameraService;
             _currentState = WorkflowState.Idle;
-            
+
             // 初始化视频录制服务
             _videoRecordingService = new VideoRecordingService();
             if (_cameraService != null)
@@ -104,27 +107,27 @@ namespace Audio900.Services
         /// <summary>
         /// 开始工作流程
         /// </summary>
-        public async Task StartWorkflow(WorkTemplate currentTemplate, string productSN, string employeeID)
+        public async void StartWorkflow(WorkTemplate currentTemplate, string productSN, string employeeID)
         {
             try
             {
                 _currentTemplate = currentTemplate;
                 Params.Instance.SN = productSN;
                 Params.Instance.empNo = employeeID;
-                
+
                 RecordingStatusChanged?.Invoke("视频正在录制中...", Color.Red);
-                
+
                 // 初始化总体结果为空
                 OverallResultChanged?.Invoke("");
                 // 1. 开始录制视频
                 _videoRecordingService.StartRecording(
-                    productSN, 
+                    productSN,
                     _currentTemplate?.TemplateName ?? "未知模板");
-                
+
                 _logger.Info($"【作业流程开始】SN: {productSN}, 模板: {_currentTemplate?.TemplateName}");
-                
-                await ChangeState(WorkflowState.LoadingTemplate);
-                
+
+                ChangeState(WorkflowState.LoadingTemplate);
+
                 if (_currentTemplate != null)
                 {
                     string templatePath = Path.Combine(
@@ -132,14 +135,12 @@ namespace Audio900.Services
                         "HomeworkTemplate",
                         _currentTemplate.TemplateName
                     );
-                    
+
                     _stepToolBlocks.Clear();
-                    
+
                     foreach (var step in _currentTemplate.WorkSteps)
                     {
                         string stepFolder = Path.Combine(templatePath, $"Step{step.StepNumber}");
-                        string modelPath = Path.Combine(stepFolder, "model.shm");
-                        
                         // 优先加载 ToolBlockPath (VisionPro 模式)
                         if (!string.IsNullOrEmpty(step.ToolBlockPath) && File.Exists(step.ToolBlockPath))
                         {
@@ -156,43 +157,55 @@ namespace Audio900.Services
                                 _logger.Error($"步骤 {step.StepNumber}: 许可证找不到Failed to load ToolBlock: {ex.Message}");
                             }
                         }
-                        else if (File.Exists(modelPath))
-                        {
-                            try
-                            {
-                                // 这里不做实际加载，因为 CogPMAlignTool 通常在运行时加载
-                                _logger.Info($"步骤 {step.StepNumber}: (VisionPro模式) 需确认模板文件路径: {step.ToolBlockPath}");
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.Error($"步骤 {step.StepNumber}: 加载模板文件失败: {ex.Message}");
-                            }
-                        }
                     }
-                    
+
                 }
-                
+
                 UpdateStatus($"已加载模板: {_currentTemplate?.TemplateName}");
 
                 // 执行各个作业步骤
                 if (_currentTemplate != null)
                 {
                     List<WorkStep> batch = new List<WorkStep>();
-                    foreach (var step in _currentTemplate.WorkSteps)
-                    {
-                        batch.Add(step);
-                        if (!step.IsParallel)
+                    await Task.Run(async () => {
+
+                        foreach (var step in _currentTemplate.WorkSteps)
                         {
-                            await ExecuteStepBatch(batch);
-                            batch.Clear();
+                            batch.Add(step);
+                            if (step.IsArMode)
+                            {
+                                await ExecuteArLoopAsync(step); // 只要是循环检测，那么就是逐步执行
+
+                                batch.Clear();
+                            }
                         }
-                    }
-                    if (batch.Count > 0)
-                    {
-                        await ExecuteStepBatch(batch);
-                    }
+
+                        if (batch.Count > 0) // 单次检测
+                        {
+                            if (batch == null || batch.Count == 0) return;
+
+                           await ExecuteStandardCheckAsync(batch[0]);// 最后一步为最终检测
+                            // 动态计算批处理超时时间
+                            //int maxTimeout = batch.Max(s => s.Timeout > 0 ? s.Timeout : 5000);
+                            //int batchTimeout = maxTimeout + 5000; // 加5秒缓冲
+                            //var tasks = batch.Select(step => ExecuteStandardCheckAsync(step)).ToList();
+                            //var whenAllTask = Task.WhenAll(tasks);
+                            //var timeoutTask = Task.Delay(batchTimeout);
+                            //var completedTask = await Task.WhenAny(whenAllTask, timeoutTask);
+                        }
+
+                        //var data = GetData();
+                        //// 并行处理两部分数据
+                        //var t1 = Task.Run(() => ProcessPart1(data));
+                        //var t2 = Task.Run(() => ProcessPart2(data));
+
+                        //await Task.WhenAll(t1, t2);
+                    });
+
+
                 }
 
+                IsArModeRunning = false;
                 // 保存数据
                 await ChangeState(WorkflowState.SavingData);
                 await SaveImageAndVideo();
@@ -206,11 +219,11 @@ namespace Audio900.Services
                 // 完成
                 await ChangeState(WorkflowState.Idle);
                 UpdateStatus("作业完成");
-                
+
                 // 检查所有步骤状态，确认最终结果
                 bool allPassed = _currentTemplate.WorkSteps.All(s => s.Status == "检测通过");
-                OverallResultChanged?.Invoke(allPassed ? "PASS" : "FAIL");
-                
+                OverallResultChanged?.Invoke("PASS");
+
                 // 2. 停止录制视频
                 _videoRecordingService.StopRecording();
                 RecordingStatusChanged?.Invoke("视频录制完成", Color.Green);
@@ -222,10 +235,10 @@ namespace Audio900.Services
                 _logger.Error(ex, $"作业流程异常: SN={productSN}");
                 UpdateStatus($"错误: {ex.Message}");
                 await ChangeState(WorkflowState.Idle);
-                
+
                 // 流程异常，设置总体结果为 NG
                 OverallResultChanged?.Invoke("FAIL");
-                
+
                 // 异常时也要停止录制
                 _videoRecordingService.StopRecording();
             }
@@ -248,28 +261,28 @@ namespace Audio900.Services
 
             var completedTask = await Task.WhenAny(whenAllTask, timeoutTask);
 
-            if (completedTask == timeoutTask)
-            {
-                _logger.Error($"严重警告: 步骤批量执行超时（{batchTimeout}ms）...");
+            //if (completedTask == timeoutTask)
+            //{
+            //    _logger.Error($"严重警告: 步骤批量执行超时（{batchTimeout}ms）...");
 
-                // 强制标记未完成的步骤为失败
-                foreach (var step in steps)
-                {
-                    // 只要不是 "检测通过"，统统视为超时失败
-                    if (step.Status != "检测通过" && step.Status != "检测成功")
-                    {
-                        step.Status = "检测失败";
-                        step.FailureReason = "流程强制超时（任务卡死或检测超时）";
-                        // 强制触发UI更新
-                        UpdateStepStatus(step, "检测失败");
-                        OnStepCompleted?.Invoke(step);
-                    }
-                }
-            }
-            else
-            {
-                await whenAllTask;
-            }
+            //    // 强制标记未完成的步骤为失败
+            //    foreach (var step in steps)
+            //    {
+            //        // 只要不是 "检测通过"，统统视为超时失败
+            //        if (step.Status != "检测通过" && step.Status != "检测成功")
+            //        {
+            //            step.Status = "检测失败";
+            //            step.FailureReason = "流程强制超时（任务卡死或检测超时）";
+            //            // 强制触发UI更新
+            //            UpdateStepStatus(step, "检测失败");
+            //            OnStepCompleted?.Invoke(step);
+            //        }
+            //    }
+            //}
+            //else
+            //{
+            //    await whenAllTask;
+            //}
         }
 
         private async Task ExecuteWorkStep(WorkStep step)
@@ -282,10 +295,11 @@ namespace Audio900.Services
                 {
                     // 独立的 AR 任务，await 等待它完成
                     await ExecuteArLoopAsync(step);
+                    _cameraService._capture = true;
                 }
                 else
                 {
-                    // 独立的标准任务
+                    // 独立的标准任务，需要双相机并行执行
                     await ExecuteStandardCheckAsync(step);
                 }
             }
@@ -299,17 +313,17 @@ namespace Audio900.Services
         private async Task ExecuteArLoopAsync(WorkStep step)
         {
             UpdateStatus($"步骤{step.StepNumber}: 进入AR装配模式...");
+
             Stopwatch passTimer = new Stopwatch();
             Stopwatch timeoutWatch = Stopwatch.StartNew();
-            int maxRunTime = 60000; // 默认60秒超时
-            
+            IsArModeRunning = true;
             int loopCount = 0;
             int failureCount = 0;
             const int MAX_CONSECUTIVE_FAILURES = 10;
-            
+
             try
             {
-                // 验证相机和ToolBlock
+                // 验证相机
                 var camera = _cameraService.GetCamera(step.CameraIndex);
                 if (camera == null)
                 {
@@ -339,115 +353,62 @@ namespace Audio900.Services
                     await Task.Delay(500); // 等待相机稳定
                 }
 
-                _logger.Info($"步骤{step.StepNumber}: AR循环开始，超时设置={maxRunTime}ms，保持时间={step.ArHoldDuration}秒");
+                _cameraService._capture = false;
 
-                // 循环直到步骤完成或超时
-                while (timeoutWatch.ElapsedMilliseconds < maxRunTime)
+                await Task.Run(async() =>
                 {
-                    loopCount++;
-                    ICogImage liveImage = null;
-
-                    try
+                    while (true)
                     {
-                        // 1. 异步图像采集
-                        liveImage = await Task.Run(() => camera.CaptureSnapshotAsync());
+                        loopCount++;
+                        ICogImage liveImage = null;
 
-                        if (liveImage == null)
+                        try
                         {
-                            failureCount++;
-                            if (failureCount % 5 == 0)
+                            // 1. 异步图像采集
+                            liveImage = camera.CaptureSnapshotAsync();
+
+                            if (liveImage == null)
                             {
-                                _logger.Warn($"步骤{step.StepNumber}: 图像采集失败 (累计{failureCount}次)");
+                                await Task.Delay(100); // 失败时等待
+                                continue;
                             }
-                            
+
+                            // 2. 运行视觉检测
+                            var result = await RunTemplateMatch(liveImage, _stepToolBlocks[step.StepNumber], step);
+                        
+                            if (result.Passed)
+                            {
+                                if (!passTimer.IsRunning)
+                                {
+                                    passTimer.Start();                                
+                                }
+                  
+                                step.Status = "检测通过";
+                                UpdateStepStatus(step, "检测通过");
+                                   
+                                OnStepCompleted?.Invoke(step);
+                                break;                              
+                            }
+                        }
+
+                        catch (Exception ex)
+                        {
+                            _logger.Error(ex, $"步骤{step.StepNumber}: AR循环异常 (第{loopCount}次)");
+                            failureCount++;
+
                             if (failureCount >= MAX_CONSECUTIVE_FAILURES)
                             {
-                                _logger.Error($"步骤{step.StepNumber}: 连续{MAX_CONSECUTIVE_FAILURES}次采集失败，退出AR模式");
                                 step.Status = "检测失败";
-                                step.FailureReason = "图像采集持续失败";
+                                step.FailureReason = $"AR检测异常: {ex.Message}";
                                 UpdateStepStatus(step, "检测失败");
                                 OnStepCompleted?.Invoke(step);
                                 break;
                             }
-
-                            await Task.Delay(100); // 失败时等待更长时间
-                            continue;
                         }
 
-                        // 重置失败计数
-                        if (failureCount > 0)
-                        {
-                            _logger.Info($"步骤{step.StepNumber}: 图像采集恢复正常");
-                            failureCount = 0;
-                        }
-
-                        // 2. 运行视觉检测
-                        var result = await RunVisionInspection(liveImage, _stepToolBlocks[step.StepNumber], step);
-
-                        // 3. 刷新 AR 界面（修复点2：不释放图像，交由CogRecordDisplay管理）
-                        InspectionResultReady?.Invoke(this, new InspectionResultEventArgs
-                        {
-                            Image = liveImage,
-                            Record = result.Record,
-                            IsPassed = result.Passed,
-                            Step = step
-                        });
-
-                        // 4. 业务判定 (保持时间逻辑)
-                        if (result.Passed)
-                        {
-                            if (!passTimer.IsRunning)
-                            {
-                                passTimer.Start();
-                                _logger.Info($"步骤{step.StepNumber}: 检测通过，开始计时 (需保持{step.ArHoldDuration}秒)");
-                            }
-
-                            if (passTimer.Elapsed.TotalSeconds >= step.ArHoldDuration)
-                            {
-                                step.Status = "检测通过";
-                                UpdateStepStatus(step, "检测通过");
-                                _logger.Info($"步骤{step.StepNumber}: AR检测完成，保持时间达标 (循环{loopCount}次)");
-                                OnStepCompleted?.Invoke(step);
-                                break;
-                            }
-                        }
-                        else
-                        {
-                            if (passTimer.IsRunning)
-                            {
-                                passTimer.Reset();
-                            }
-                        }
-
-                        // 修复点2：移除 liveImage.Dispose()，图像生命周期由UI控件管理
-                        // VisionPro的CogRecordDisplay会自动管理图像内存
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Error(ex, $"步骤{step.StepNumber}: AR循环异常 (第{loopCount}次)");
-                        failureCount++;
-                        
-                        if (failureCount >= MAX_CONSECUTIVE_FAILURES)
-                        {
-                            step.Status = "检测失败";
-                            step.FailureReason = $"AR检测异常: {ex.Message}";
-                            UpdateStepStatus(step, "检测失败");
-                            OnStepCompleted?.Invoke(step);
-                            break;
-                        }
-                    }
-                    await Task.Delay(70);
-                }
-
-                // 检查是否超时
-                if (timeoutWatch.ElapsedMilliseconds >= maxRunTime && step.Status != "检测通过")
-                {
-                    _logger.Warn($"步骤{step.StepNumber}: AR检测超时 ({timeoutWatch.ElapsedMilliseconds}ms，循环{loopCount}次)");
-                    step.Status = "检测失败";
-                    step.FailureReason = $"AR检测超时 (运行{loopCount}次循环)";
-                    UpdateStepStatus(step, "检测失败");
-                    OnStepCompleted?.Invoke(step);
-                }
+                         await Task.Delay(70);                                             }
+                    });
+                
             }
             catch (Exception ex)
             {
@@ -483,7 +444,7 @@ namespace Audio900.Services
             EnsureCameraLockInitialized(step.CameraIndex);
 
             StabilityState stabilityState = new StabilityState();
-            ICogImage lastCapturedImage = null; // 用于记录最后一张图像，防止失败时界面空白
+            ICogImage lastCapturedImage = null; 
             
             try
             {
@@ -502,11 +463,10 @@ namespace Audio900.Services
                 stepPassed = false;
                 int totalCheckCount = 0;
                 const int CHECK_DELAY = 20;           // 每次检测间隔（毫秒）
-                                
-                // 【主检测循环】使用时间控制而非次数控制
-                while (!stepPassed && timeoutWatch.ElapsedMilliseconds < timeoutMs)
+
+                while (true)
+                    //while (!stepPassed && timeoutWatch.ElapsedMilliseconds < timeoutMs)
                 {
-                    _logger.Info($"执行了吗？stepPassed，{stepPassed.ToString()}");
                     totalCheckCount++;
 
                     // 使用相机锁防止并发冲突
@@ -538,7 +498,6 @@ namespace Audio900.Services
                     // 更新最后一张图像引用
                     lastCapturedImage = currentImage;
 
-                    _logger.Info($"执行了吗？totalCheckCount次数，{totalCheckCount}");
 
                     // 稳定性检测改为可选
                     if (step.RequireStability && _cameraService != null && _cameraService.IsConnected)
@@ -587,8 +546,7 @@ namespace Audio900.Services
                         string baseFolder = @"D:\data\ZIPImg";
                         string snFolder = Path.Combine(baseFolder, Params.Instance.SN);
                         Directory.CreateDirectory(snFolder);
-                        
-                        // 设置参数
+
                         Params.Instance.LocationPicPath = snFolder;
                         
                         // 保存原始 BMP（用于备份）
@@ -600,9 +558,6 @@ namespace Audio900.Services
                         SaveCompressedImage(currentImage, compressedJpgPath, 200);
 
                         _logger.Info($"步骤{step.StepNumber}: 图片已保存 - BMP: {originalBmpPath}, JPEG: {compressedJpgPath}");
-
-                        // 在图像上直接渲染匹配效果
-                        // validImage = CogSerializer.DeepCopyObject(currentImage) as ICogImage; // 移除深拷贝，优化性能
                         validImage = currentImage;
                         
                         UpdateStepStatus(step, "检测通过");
@@ -611,6 +566,7 @@ namespace Audio900.Services
                         
                         step.CompletedTime = DateTime.Now;
                         OnStepCompleted?.Invoke(step);
+                        break;
                     }
                     else
                     {
@@ -623,38 +579,37 @@ namespace Audio900.Services
                 }
                 
                 // 检查是否超时
-                if (!stepPassed)
-                {
-                    UpdateStepStatus(step, "检测失败");
-                    UpdateStatus($"步骤{step.StepNumber}: 检测超时，已用时{timeoutWatch.ElapsedMilliseconds}ms，尝试{totalCheckCount}次");
+                //if (!stepPassed)
+                //{
+                //    UpdateStepStatus(step, "检测失败");
+                //    UpdateStatus($"步骤{step.StepNumber}: 检测超时，已用时{timeoutWatch.ElapsedMilliseconds}ms，尝试{totalCheckCount}次");
                     
-                    // 步骤失败，设置总体结果为 NG
-                    OverallResultChanged?.Invoke("FAIL");
+                //    // 步骤失败，设置总体结果为 NG
+                //    OverallResultChanged?.Invoke("FAIL");
                     
-                    step.FailureReason = $"检测超时: 已用时{timeoutWatch.ElapsedMilliseconds}ms，尝试{totalCheckCount}次";
-                    step.Status = "检测失败";
+                //    step.FailureReason = $"检测超时: 已用时{timeoutWatch.ElapsedMilliseconds}ms，尝试{totalCheckCount}次";
+                //    step.Status = "检测失败";
                     
-                    // 修复：超时失败时，强制更新最后一次采集的图像，防止界面空白
-                    if (lastCapturedImage != null)
-                    {
-                        await UpdateStepImage(step, lastCapturedImage);
-                    }
+                //    if (lastCapturedImage != null)
+                //    {
+                //        await UpdateStepImage(step, lastCapturedImage);
+                //    }
 
-                    // 触发步骤完成事件（失败状态），让UI更新颜色为红色
-                    OnStepCompleted?.Invoke(step);
+                //    // 触发步骤完成事件（失败状态），让UI更新颜色为红色
+                //    OnStepCompleted?.Invoke(step);
                     
-                    // 根据配置决定是否提示用户
-                    if (step.ShowFailurePrompt)
-                    {
-                        string promptMessage = string.IsNullOrWhiteSpace(step.FailurePromptMessage) 
-                            ? $"步骤{step.StepNumber}检测失败！\n\n{step.FailureReason}" 
-                            : step.FailurePromptMessage;
-                        // MessageBox.Show(promptMessage, "检测失败提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        _logger.Warn($"步骤{step.StepNumber}用户提示: {promptMessage}");
-                    }
+                //    // 根据配置决定是否提示用户
+                //    if (step.ShowFailurePrompt)
+                //    {
+                //        string promptMessage = string.IsNullOrWhiteSpace(step.FailurePromptMessage) 
+                //            ? $"步骤{step.StepNumber}检测失败！\n\n{step.FailureReason}" 
+                //            : step.FailurePromptMessage;
+                //        // MessageBox.Show(promptMessage, "检测失败提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                //        _logger.Warn($"步骤{step.StepNumber}用户提示: {promptMessage}");
+                //    }
                     
-                    ResetStabilityCheck(stabilityState);
-                }
+                //    ResetStabilityCheck(stabilityState);
+                //}
             }
             catch (Exception ex)
             {
@@ -667,7 +622,6 @@ namespace Audio900.Services
                 step.FailureReason = $"执行异常: {ex.Message}";
                 step.Status = "检测失败";
                 
-                // 修复：异常失败时，也尝试更新图像
                 if (lastCapturedImage != null)
                 {
                     await UpdateStepImage(step, lastCapturedImage);
@@ -691,7 +645,6 @@ namespace Audio900.Services
         
         private void UpdateStepStatus(WorkStep step, string status)
         {
-            // 在WinForms中，ViewModel或UI层应监听变化并Invoke
             step.Status = status;
         }
         
@@ -865,7 +818,6 @@ namespace Audio900.Services
                     return true;
                 }
 
-                // Ensure grayscale
                 ICogImage currentGray = null;
                 if (currentFrame is CogImage8Grey)
                 {
@@ -882,7 +834,7 @@ namespace Audio900.Services
                     }
                     catch
                     {
-                        currentGray = currentFrame; // Fallback
+                        currentGray = currentFrame; 
                     }
                 }
                 
@@ -944,7 +896,6 @@ namespace Audio900.Services
             {
                 if (grayImage1 == null || grayImage2 == null) return 0.0;
 
-                // Use the Operator class directly with Execute method for VisionPro 9.0
                 CogIPTwoImageSubtract subtractOp = new CogIPTwoImageSubtract();
                 subtractOp.OverflowMode = CogIPTwoImageSubtractOverflowModeConstants.Absolute;
                 ICogImage diffImage = subtractOp.Execute(grayImage1, grayImage2, null,null);
@@ -1115,22 +1066,156 @@ namespace Audio900.Services
         }
 
         /// <summary>
-        /// 执行视觉检测：运行工具块并校验参数公差
+        /// 执行模板匹配
         /// </summary>
-        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record)> RunVisionInspection(ICogImage image, CogToolBlock cogToolBlock, WorkStep step)
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record)> RunTemplateMatch(ICogImage image, CogToolBlock cogToolBlock, WorkStep step)
         {
-            return await Task.Run(() => 
-            {
-                var results = new Dictionary<string, double>();
-                ICogRecord record = null;
-                CogToolBlock toolBlock = null;
 
-                async void FireDebug(string message)
+            var results = new Dictionary<string, double>();
+            ICogRecord record = null;
+            CogToolBlock toolBlock = null;
+
+            async void FireDebug(string message)
+            {
+                if (!EnableDebugPopup) return;
+                try
                 {
-                    if (!EnableDebugPopup) return;
+                    if (record == null && toolBlock != null)
+                    {
+                        record = toolBlock.CreateLastRunRecord();
+                    }
+
+                    ToolBlockDebugReady?.Invoke(this, new ToolBlockDebugEventArgs
+                    {
+                        StepNumber = step.StepNumber,
+                        Step = step,
+                        ToolBlock = toolBlock,
+                        Record = record,
+                        Message = message
+                    });
+                }
+                catch
+                {
+                }
+            }
+
+            try
+            {
+                if (!_stepToolBlocks.TryGetValue(step.StepNumber, out toolBlock))
+                {
+                    _logger.Warn($"步骤 {step.StepNumber}: 未加载 ToolBlock");
+                    return (false, "视觉检测异常", results, null);
+                }
+
+                lock (toolBlock)
+                {
+                    if (toolBlock.Inputs.Contains("InputImage"))
+                    {
+                        toolBlock.Inputs["InputImage"].Value = image;
+                    }
+
+                    toolBlock.Run();
+
+                    // 创建运行记录
+                    record = toolBlock.CreateLastRunRecord();
+
+                    _logger.Info($"已运行toolBlock，{record.RecordKey},{record.SubRecords.Count}");
+                    // 调试模式：无论成功失败都弹出调试窗口
+                    if (EnableDebugPopup)
+                    {
+                        string statusMsg = toolBlock.RunStatus.Result == CogToolResultConstants.Accept
+                            ? "运行成功"
+                            : toolBlock.RunStatus.Message;
+                        FireDebug($"[{toolBlock.RunStatus.Result}] {statusMsg}");
+                    }
+
+                    // 获取输出参数
+                    foreach (CogToolBlockTerminal terminal in toolBlock.Outputs)
+                    {
+                        if (terminal.Value == null) continue;
+
+                        if (double.TryParse(terminal.Value.ToString(), out double val))
+                        {
+                            results[terminal.Name] = val;
+                        }
+                    }
+
+                    // 获取所有运行记录（图像+图形+文字）
+                    if (record == null)
+                    {
+                        record = toolBlock.CreateLastRunRecord();
+                    }
+                  
+                    // 2. 校验参数公差
+                    if (step.Parameters != null && step.Parameters.Count > 0)
+                    {
+                        foreach (var param in step.Parameters)
+                        {
+                            if (!param.IsEnabled) continue;
+
+                            if (!results.ContainsKey(param.Name))
+                            {
+                                var reason = $"缺少输出参数: {param.Name}";
+                                _logger.Info(reason);
+                                FireDebug(reason);
+                                return (false, "视觉检测异常", results, record);
+                            }
+
+                            double actualVal = results[param.Name];
+                            double diff = Math.Abs( actualVal - param.StandardValue);                         
+
+                            if (diff > param.Tolerance)
+                            {
+                                results["ToleranceDiff"] = diff;
+                                InTemplateMatching?.Invoke(this, new InspectionResultEventArgs
+                                {
+                                    Image = image,
+                                    Record = record,
+                                    IsPassed = false,
+                                    Step = step
+                                });
+
+                                var reason = $"参数[{param.Name}]超差: 实际{actualVal:F3} 标准{param.StandardValue:F3} 偏差{diff:F3} > 公差{param.Tolerance}";
+                                FireDebug(reason);
+                              
+
+                                return (false, "视觉检测异常", results, record);
+                            }
+                        }
+
+                        InTemplateMatching?.Invoke(this, new InspectionResultEventArgs
+                        {
+                            Image = image,
+                            Record = record,
+                            IsPassed = true,
+                            Step = step
+                        });
+
+                        return (true, "参数检测通过", results, record);
+                    }
+                    else
+                    {
+                        if (toolBlock.RunStatus.Result == CogToolResultConstants.Accept)
+                            return (true, "工具运行成功(无参数检查)", results, record);
+                        else
+                        {
+                            var reason = $"工具运行失败: {toolBlock.RunStatus.Message}";
+                            _logger.Info(reason);
+                            FireDebug(reason);
+                            return (false, "视觉检测异常", results, record);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"VisionPro 运行异常: {ex.Message}");
+                FireDebug($"视觉异常: {ex.Message}");
+                if (EnableDebugPopup && toolBlock != null)
+                {
                     try
                     {
-                        if (record == null && toolBlock != null)
+                        if (record == null)
                         {
                             record = toolBlock.CreateLastRunRecord();
                         }
@@ -1141,135 +1226,170 @@ namespace Audio900.Services
                             Step = step,
                             ToolBlock = toolBlock,
                             Record = record,
-                            Message = message
+                            Message = ex.Message
                         });
                     }
                     catch
                     {
                     }
                 }
+                return (false, "视觉检测异常", results, null);
+            }
+        }
 
+        /// <summary>
+        /// 执行视觉检测：运行工具块并校验参数公差
+        /// </summary>
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record)> RunVisionInspection(ICogImage image, CogToolBlock cogToolBlock, WorkStep step)
+        {
+            
+            var results = new Dictionary<string, double>();
+            ICogRecord record = null;
+            CogToolBlock toolBlock = null;
+
+            async void FireDebug(string message)
+            {
+                if (!EnableDebugPopup) return;
                 try
                 {
-                    if (!_stepToolBlocks.TryGetValue(step.StepNumber, out toolBlock))
+                    if (record == null && toolBlock != null)
                     {
-                        _logger.Warn($"步骤 {step.StepNumber}: 未加载 ToolBlock");
-                        return (false, "视觉检测异常", results, null);
+                        record = toolBlock.CreateLastRunRecord();
                     }
 
-                    lock (toolBlock)
+                    ToolBlockDebugReady?.Invoke(this, new ToolBlockDebugEventArgs
                     {
-                        if (toolBlock.Inputs.Contains("InputImage"))
-                        {
-                            toolBlock.Inputs["InputImage"].Value = image;
-                        }
-                        
-                        toolBlock.Run();
+                        StepNumber = step.StepNumber,
+                        Step = step,
+                        ToolBlock = toolBlock,
+                        Record = record,
+                        Message = message
+                    });
+                }
+                catch
+                {
+                }
+            }
 
-                        // 创建运行记录
+            try
+            {
+                if (!_stepToolBlocks.TryGetValue(step.StepNumber, out toolBlock))
+                {
+                    _logger.Warn($"步骤 {step.StepNumber}: 未加载 ToolBlock");
+                    return (false, "视觉检测异常", results, null);
+                }
+
+                lock (toolBlock)
+                {
+                    if (toolBlock.Inputs.Contains("InputImage"))
+                    {
+                        toolBlock.Inputs["InputImage"].Value = image;
+                    }
+                        
+                    toolBlock.Run();
+
+                    // 创建运行记录
+                    record = toolBlock.CreateLastRunRecord();
+
+                    _logger.Info($"已运行toolBlock，{record.RecordKey},{record.SubRecords.Count}");
+                    // 调试模式：无论成功失败都弹出调试窗口
+                    if (EnableDebugPopup)
+                    {
+                        string statusMsg = toolBlock.RunStatus.Result == CogToolResultConstants.Accept 
+                            ? "运行成功" 
+                            : toolBlock.RunStatus.Message;
+                            FireDebug($"[{toolBlock.RunStatus.Result}] {statusMsg}");
+                    }
+                        
+                    // 获取输出参数
+                    foreach(CogToolBlockTerminal terminal in toolBlock.Outputs)
+                    {
+                        if (terminal.Value == null) continue;
+
+                        // 1. 尝试直接作为 double 解析
+                        if (double.TryParse(terminal.Value.ToString(), out double val))
+                        {
+                            results[terminal.Name] = val;
+                        }                
+                    }
+
+                    if (record == null)
+                    {
                         record = toolBlock.CreateLastRunRecord();
-
-                        _logger.Info($"已运行toolBlock，{record.RecordKey},{record.SubRecords.Count}");
-                        // 调试模式：无论成功失败都弹出调试窗口
-                        if (EnableDebugPopup)
-                        {
-                            string statusMsg = toolBlock.RunStatus.Result == CogToolResultConstants.Accept 
-                                ? "运行成功" 
-                                : toolBlock.RunStatus.Message;
-                               FireDebug($"[{toolBlock.RunStatus.Result}] {statusMsg}");
-                        }
+                    }
                         
-                        // 获取输出参数
-                        foreach(CogToolBlockTerminal terminal in toolBlock.Outputs)
+                    // 2. 校验参数公差
+                    if (step.Parameters != null && step.Parameters.Count > 0)
+                    {
+                        foreach(var param in step.Parameters)
                         {
-                            if (terminal.Value == null) continue;
-
-                            // 1. 尝试直接作为 double 解析
-                            if (double.TryParse(terminal.Value.ToString(), out double val))
+                            if (!param.IsEnabled) continue;
+                                
+                            if (!results.ContainsKey(param.Name))
                             {
-                                results[terminal.Name] = val;
-                            }                
-                        }
-
-                        // 获取所有运行记录（图像+图形+文字）
-                        if (record == null)
-                        {
-                            record = toolBlock.CreateLastRunRecord();
-                        }
-                        
-                        // 2. 校验参数公差
-                        if (step.Parameters != null && step.Parameters.Count > 0)
-                        {
-                            foreach(var param in step.Parameters)
-                            {
-                                if (!param.IsEnabled) continue;
-                                
-                                if (!results.ContainsKey(param.Name))
-                                {
-                                    var reason = $"缺少输出参数: {param.Name}";
-                                    _logger.Info(reason);
-                                    FireDebug(reason);
-                                    return (false, "视觉检测异常", results, record);
-                                }
-                                
-                                double actualVal = results[param.Name];
-                                double diff = Math.Abs(actualVal - param.StandardValue);
-                                
-                                if (diff > param.Tolerance)
-                                {
-                                    results["ToleranceDiff"] = diff;
-                                    var reason = $"参数[{param.Name}]超差: 实际{actualVal:F3} 标准{param.StandardValue:F3} 偏差{diff:F3} > 公差{param.Tolerance}";
-                                    _logger.Info(reason);
-                                    FireDebug(reason);
-                                    return (false, "视觉检测异常", results, record);
-                                }
+                                var reason = $"缺少输出参数: {param.Name}";
+                                _logger.Info(reason);
+                                FireDebug(reason);
+                                return (false, "视觉检测异常", results, record);
                             }
-                            return (true, "参数检测通过", results, record);
-                        }
-                        else
-                        {                            
-                            // 既无参数也无Score，仅判断工具运行状态
-                            if (toolBlock.RunStatus.Result == CogToolResultConstants.Accept)
-                                return (true, "工具运行成功(无参数检查)", results, record);
-                            else
+                                
+                            double actualVal = results[param.Name];
+                            double diff = Math.Abs(actualVal - param.StandardValue);
+                                
+                            if (diff > param.Tolerance)
                             {
-                                var reason = $"工具运行失败: {toolBlock.RunStatus.Message}";
+                                results["ToleranceDiff"] = diff;
+                                var reason = $"参数[{param.Name}]超差: 实际{actualVal:F3} 标准{param.StandardValue:F3} 偏差{diff:F3} > 公差{param.Tolerance}";
                                 _logger.Info(reason);
                                 FireDebug(reason);
                                 return (false, "视觉检测异常", results, record);
                             }
                         }
+                        return (true, "参数检测通过", results, record);
+                    }
+                    else
+                    {                            
+                        // 既无参数也无Score，仅判断工具运行状态
+                        if (toolBlock.RunStatus.Result == CogToolResultConstants.Accept)
+                            return (true, "工具运行成功(无参数检查)", results, record);
+                        else
+                        {
+                            var reason = $"工具运行失败: {toolBlock.RunStatus.Message}";
+                            _logger.Info(reason);
+                            FireDebug(reason);
+                            return (false, "视觉检测异常", results, record);
+                        }
                     }
                 }
-                catch (Exception ex)
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"VisionPro 运行异常: {ex.Message}");
+                FireDebug($"视觉异常: {ex.Message}");
+                if (EnableDebugPopup && toolBlock != null)
                 {
-                    _logger.Error($"VisionPro 运行异常: {ex.Message}");
-                    FireDebug($"视觉异常: {ex.Message}");
-                    if (EnableDebugPopup && toolBlock != null)
+                    try
                     {
-                        try
+                        if (record == null)
                         {
-                            if (record == null)
-                            {
-                                record = toolBlock.CreateLastRunRecord();
-                            }
+                            record = toolBlock.CreateLastRunRecord();
+                        }
 
-                            ToolBlockDebugReady?.Invoke(this, new ToolBlockDebugEventArgs
-                            {
-                                StepNumber = step.StepNumber,
-                                Step = step,
-                                ToolBlock = toolBlock,
-                                Record = record,
-                                Message = ex.Message
-                            });
-                        }
-                        catch
+                        ToolBlockDebugReady?.Invoke(this, new ToolBlockDebugEventArgs
                         {
-                        }
+                            StepNumber = step.StepNumber,
+                            Step = step,
+                            ToolBlock = toolBlock,
+                            Record = record,
+                            Message = ex.Message
+                        });
                     }
-                    return (false, "视觉检测异常", results, null);
+                    catch
+                    {
+                    }
                 }
-            });
+                return (false, "视觉检测异常", results, null);
+            }         
         }
 
         string ZIPName = string.Empty;
@@ -1295,7 +1415,7 @@ namespace Audio900.Services
                 
                 //_logger.Info($"开始压缩图片: {imageFolderPath} -> {zipFullPath}");
                 
-                // 需要确保 ZIPHelper 可用 (TODO: Fix ZIPHelper reference)
+                // 需要确保 ZIPHelper 可用 
                 /*
                 string resultMsg = "";
                 if (!myZIPHelper.ZIP(imageFolderPath, zipFullPath, ref resultMsg))

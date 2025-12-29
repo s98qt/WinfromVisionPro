@@ -33,7 +33,7 @@ namespace Audio900.Services
         private bool _isRunning;
         private Thread _captureThread;
         private IntPtr _camHandle;
-        private bool _capture;
+        public bool _capture;
         private int _width;
         private int _height;
         private int _bpp;
@@ -47,6 +47,7 @@ namespace Audio900.Services
         private ICogImage _latestFrame = null;
         private VideoRecordingService _videoRecordingService;
         private bool _isInitialized = false;
+        private AutoResetEvent _newFrameSignal = new AutoResetEvent(false);
         #endregion
 
         #region 多相机管理字段
@@ -283,7 +284,6 @@ namespace Audio900.Services
         #region 相机检测
         /// <summary>
         /// 获取当前最新的一帧图像（深拷贝，防止多线程冲突）
-        /// 用于实时AR跟踪等需要主动拉取图像的场景
         /// </summary>
         public ICogImage GetLatestFrameCopy()
         {
@@ -291,7 +291,6 @@ namespace Audio900.Services
             {
                 if (_latestFrame != null)
                 {
-                    // 必须Copy，因为采集线程马上会修改 _latestFrame 的内存
                     return CopyImage(_latestFrame);
                 }
                 return null;
@@ -299,7 +298,7 @@ namespace Audio900.Services
         }
 
         /// <summary>
-        /// 获取多相机模式下的子相机列表（用于AR跟踪等需要访问各个相机的场景）
+        /// 获取多相机模式下的子相机列表用于AR跟踪等需要访问各个相机的场景
         /// </summary>
         public List<CameraService> GetCameras()
         {
@@ -307,7 +306,7 @@ namespace Audio900.Services
         }
 
         /// <summary>
-        /// 获取配置的相机数量（直接读取配置文件，不进行硬件探测）
+        /// 获取配置的相机数量直接读取配置文件
         /// </summary>
         public static int GetCameraCount(bool forceRefresh = false)
         {
@@ -329,7 +328,7 @@ namespace Audio900.Services
                         }
                         else
                         {
-                            // 第一次失败就停止，不再继续探测
+                            // 第一次失败就停止，不再继续
                             break;
                         }
                     }
@@ -339,7 +338,7 @@ namespace Audio900.Services
             }
             catch
             {
-                // ignore
+                
             }
             return 2; // 默认返回2个
         }
@@ -632,10 +631,14 @@ namespace Audio900.Services
 
                             if (cogImage != null)
                             {
+                                ICogImage safeImageForUi = null;
                                 lock (_frameLock)
                                 {
                                     _latestFrame = CopyImage(cogImage);
+                                    safeImageForUi = _latestFrame;
                                 }
+
+                                _newFrameSignal.Set();
 
                                 if (_videoRecordingService != null && _videoRecordingService.IsRecording)
                                 {
@@ -649,11 +652,14 @@ namespace Audio900.Services
 
                                 if (_parentControl != null && !_parentControl.IsDisposed)
                                 {
+                                    var imageToSend = safeImageForUi;
                                     _parentControl.BeginInvoke(new Action(() =>
                                     {
                                         try
                                         {
-                                            ImageCaptured?.Invoke(this, cogImage);
+                                            // 使用安全的深拷贝图像触发事件，而不是原始的 cogImage
+                                            if (imageToSend != null)
+                                                ImageCaptured?.Invoke(this, imageToSend);
                                         }
                                         catch (Exception ex)
                                         {
@@ -754,13 +760,23 @@ namespace Audio900.Services
         {
             try
             {
+
                 if (_isRunning && _latestFrame != null)
                 {
-                    lock (_frameLock)
+                    // 等待新图信号，超时 200ms
+                    if (_newFrameSignal.WaitOne(200))
                     {
-                        var copiedImage = CopyImage(_latestFrame);
-                        return copiedImage;
+                        lock (_frameLock)
+                        {
+                            return CopyImage(_latestFrame);
+                        }
                     }
+                    else
+                    {
+                        // 
+                        LoggerService.Warn("单次拍照取的旧图CaptureSnapshotAsync，说明采集线程可能卡死了");
+                        return null;
+                    }         
                 }
 
                 if (_cameraType == CameraType.Oumit1960)
@@ -772,7 +788,7 @@ namespace Audio900.Services
                     try
                     {
                         _camera1960.StartView();
-                        Thread.Sleep(300);
+                        Thread.Sleep(100); // 300ms
 
                         int w = (int)_camera1960.CollectWidth;
                         int h = (int)_camera1960.CollectHeight;
@@ -793,7 +809,8 @@ namespace Audio900.Services
                         }
 
                         ICogImage snapshot = ConvertRgbBufferToCogImage(rgbBuffer, w, h);
-                        return snapshot;
+                        // 
+                        return CopyImage(snapshot);
                     }
                     catch (Exception ex)
                     {
@@ -823,7 +840,7 @@ namespace Audio900.Services
                         }
 
                         ICogImage snapshot = ConvertBGRDataToCogImage(data, w, h);
-                        return snapshot;
+                        return CopyImage(snapshot);
                     }
                     return null;
                 }

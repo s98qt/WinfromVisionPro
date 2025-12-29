@@ -386,9 +386,6 @@ namespace Audio900.Views
                                  }
                              }
 
-                             // 刷新界面
-                             // 刷新界面
-                             // BindingList 会自动通知 DataGridView 更新，但重置 DataSource 更可靠
                              dgvParams.DataSource = null;
                              dgvParams.DataSource = Step.Parameters;
                              dgvParams.Refresh();

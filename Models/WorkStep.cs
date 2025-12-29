@@ -64,11 +64,11 @@ namespace Audio900.Models
         private bool _showFailurePrompt;
         private string _failurePromptMessage;
         
-        // 新增属性
         private int _cameraIndex;
         private bool _isParallel;
         private bool _syncNextStepsEnabled;
         private string _syncNextSteps;
+
         /// <summary>
         /// 是否为AR实时连续检测模式
         /// </summary>
@@ -82,7 +82,6 @@ namespace Audio900.Models
 
         /// <summary>
         /// 是否需要图像稳定性检查（默认 true）
-        /// 对于动作检测场景（如镊子夹入），应设置为 false，允许"边动边测"
         /// </summary>
         private bool _requireStability = true;
 
@@ -184,7 +183,6 @@ namespace Audio900.Models
 
         /// <summary>
         /// 是否需要图像稳定性检查（默认 true）
-        /// 对于动作检测场景（如镊子夹入），应设置为 false，允许"边动边测"
         /// </summary>
         public bool RequireStability
         {

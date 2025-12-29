@@ -31,7 +31,6 @@ namespace Audio900.Views
             }
             else
             {
-                // Default 2 steps
                 AddStep();
                 AddStep();
             }
@@ -123,7 +122,6 @@ namespace Audio900.Views
             string safeName = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
             _templatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "HomeworkTemplate", safeName);
             
-            // Update existing controls
             foreach(StepControl c in flpSteps.Controls)
             {
                 c.TemplateBasePath = _templatePath;
@@ -154,12 +152,11 @@ namespace Audio900.Views
             
             _tempSteps.Add(step);
             
-            // Ensure template path is set on new controls
             if (string.IsNullOrEmpty(_templatePath)) UpdateTemplatePath();
 
             var control = new StepControl(step, _cameraService, _templatePath);
             control.Width = flpSteps.Width - 25; 
-            control.Visible = true; // Ensure visible
+            control.Visible = true;
             control.DeleteRequested += StepControl_DeleteRequested;
             flpSteps.Controls.Add(control);
             flpSteps.ScrollControlIntoView(control);
@@ -173,13 +170,12 @@ namespace Audio900.Views
                 flpSteps.Controls.Remove(control);
                 _tempSteps.Remove(control.Step);
                 control.Dispose();
-                
-                // Renumber
+
                 int index = 1;
                 foreach(StepControl c in flpSteps.Controls)
                 {
                     c.Step.StepNumber = index++;
-                    c.RefreshUI(); // Update labels
+                    c.RefreshUI(); 
                 }
             }
         }
