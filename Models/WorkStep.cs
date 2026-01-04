@@ -243,7 +243,37 @@ namespace Audio900.Models
         
         // VisionPro 工具块文件路径 (.vpp)
         public string ToolBlockPath { get; set; }
-        
+
+        /// <summary>
+        /// 算法类型：0=VisionPro模板匹配, 1=深度学习(YOLOv8)
+        /// </summary>
+        private int _algorithmType;
+        public int AlgorithmType
+        {
+            get => _algorithmType;
+            set { _algorithmType = value; OnPropertyChanged(nameof(AlgorithmType)); }
+        }
+
+        /// <summary>
+        /// 深度学习模型路径 (.onnx)
+        /// </summary>
+        private string _modelPath;
+        public string ModelPath
+        {
+            get => _modelPath;
+            set { _modelPath = value; OnPropertyChanged(nameof(ModelPath)); }
+        }
+
+        /// <summary>
+        /// 置信度阈值 (0.0 - 1.0)
+        /// </summary>
+        private double _confidenceThreshold = 0.5;
+        public double ConfidenceThreshold
+        {
+            get => _confidenceThreshold;
+            set { _confidenceThreshold = value; OnPropertyChanged(nameof(ConfidenceThreshold)); }
+        }
+
         // 模板图像
         public ICogImage TemplateImage { get; set; }
        

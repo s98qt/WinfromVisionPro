@@ -49,6 +49,9 @@ namespace Audio900.Services
 
         // ToolBlock 缓存
         private Dictionary<int, CogToolBlock> _stepToolBlocks = new Dictionary<int, CogToolBlock>();
+        
+        // Deep Learning 模型缓存 (ModelPath -> Service)
+        private Dictionary<string, YoloV8Service> _loadedModels = new Dictionary<string, YoloV8Service>();
 
         // 相机锁机制，防止同一相机并发访问冲突
         private static Dictionary<int, SemaphoreSlim> _cameraLocks = new Dictionary<int, SemaphoreSlim>();
@@ -137,10 +140,39 @@ namespace Audio900.Services
                     );
 
                     _stepToolBlocks.Clear();
+                    _loadedModels.Clear();
 
                     foreach (var step in _currentTemplate.WorkSteps)
                     {
                         string stepFolder = Path.Combine(templatePath, $"Step{step.StepNumber}");
+                        
+                        // 加载深度学习模型
+                        if (step.AlgorithmType == 1 && !string.IsNullOrEmpty(step.ModelPath))
+                        {
+                            try 
+                            {
+                                if (!_loadedModels.ContainsKey(step.ModelPath))
+                                {
+                                    if (File.Exists(step.ModelPath))
+                                    {
+                                        var svc = new YoloV8Service();
+                                        // 这里可以传入标签列表，如果需要的话。暂时传 null
+                                        svc.LoadModel(step.ModelPath, null); 
+                                        _loadedModels[step.ModelPath] = svc;
+                                        _logger.Info($"步骤 {step.StepNumber}: 已加载模型 {step.ModelPath}");
+                                    }
+                                    else
+                                    {
+                                         _logger.Error($"步骤 {step.StepNumber}: 模型文件不存在 {step.ModelPath}");
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.Error($"步骤 {step.StepNumber}: 模型加载失败 {ex.Message}");
+                            }
+                        }
+
                         // 优先加载 ToolBlockPath (VisionPro 模式)
                         if (!string.IsNullOrEmpty(step.ToolBlockPath) && File.Exists(step.ToolBlockPath))
                         {
@@ -374,7 +406,27 @@ namespace Audio900.Services
                             }
 
                             // 2. 运行视觉检测
-                            var result = await RunTemplateMatch(liveImage, _stepToolBlocks[step.StepNumber], step);
+                            (bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record) result;
+
+                            if (step.AlgorithmType == 1)
+                            {
+                                var toolBlock = _stepToolBlocks.ContainsKey(step.StepNumber) ? _stepToolBlocks[step.StepNumber] : null;
+                                result = await RunHybridLogic(liveImage, step, toolBlock);
+                            }
+                            else
+                            {
+                                result = await RunTemplateMatch(liveImage, _stepToolBlocks.ContainsKey(step.StepNumber) ? _stepToolBlocks[step.StepNumber] : null, step);
+                            }
+
+                            // 触发结果事件，用于UI显示 (AR效果)
+                            InspectionResultReady?.Invoke(this, new InspectionResultEventArgs 
+                            { 
+                                Image = liveImage,
+                                Record = result.Record,
+                                Results = result.Results,
+                                IsPassed = result.Passed,
+                                Step = step
+                            });
                         
                             if (result.Passed)
                             {
@@ -524,7 +576,19 @@ namespace Audio900.Services
 
                     // 执行视觉检测（包含参数公差比对）
                     _logger.Info($"执行了吗？执行视觉检测（包含参数公差比对）");
-                    var inspection = await RunVisionInspection(currentImage, _stepToolBlocks[step.StepNumber], step);
+                    
+                    (bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record) inspection;
+
+                    if (step.AlgorithmType == 1)
+                    {
+                         var toolBlock = _stepToolBlocks.ContainsKey(step.StepNumber) ? _stepToolBlocks[step.StepNumber] : null;
+                         inspection = await RunHybridLogic(currentImage, step, toolBlock);
+                    }
+                    else
+                    {
+                         inspection = await RunVisionInspection(currentImage, _stepToolBlocks.ContainsKey(step.StepNumber) ? _stepToolBlocks[step.StepNumber] : null, step);
+                    }
+
                     UpdateStatus($"步骤{step.StepNumber}: {inspection.Reason}");
                     
                     // 触发结果事件，用于UI显示
@@ -1066,14 +1130,137 @@ namespace Audio900.Services
         }
 
         /// <summary>
+        /// 执行深度学习检测逻辑
+        /// </summary>
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record)> RunDeepLearningLogic(ICogImage image, WorkStep step)
+        {
+            var results = new Dictionary<string, double>();
+            ICogRecord record = null;
+            string reason = "";
+            bool passed = false;
+
+            try
+            {
+                if (string.IsNullOrEmpty(step.ModelPath))
+                {
+                     return (false, "模型路径为空", results, null);
+                }
+
+                if (!_loadedModels.TryGetValue(step.ModelPath, out var dlService))
+                {
+                     return (false, "模型未加载", results, null);
+                }
+
+                // 转换图像
+                using (var bitmap = image.ToBitmap())
+                {
+                    // 运行推理
+                    var predictions = await Task.Run(() => dlService.Predict(bitmap, (float)step.ConfidenceThreshold));
+
+                    // 简单判定逻辑：识别到目标即为通过
+                    // 实际应用中可能需要判断 ClassId 或 数量
+                    passed = predictions.Count > 0;
+                    
+                    if (passed)
+                    {
+                        reason = $"识别成功: {predictions.Count}个目标";
+                        // 取置信度最高的目标作为分数输出
+                        var best = predictions.OrderByDescending(p => p.Confidence).First();
+                        results["Score"] = best.Confidence;
+                        results["ClassId"] = best.ClassId;
+                        results["X"] = best.Rectangle.X;
+                        results["Y"] = best.Rectangle.Y;
+                    }
+                    else
+                    {
+                        reason = "未识别到目标";
+                        results["Score"] = 0;
+                    }
+
+                    // 生成 VisionPro 显示记录
+                    record = VisionProHelper.CreateRecordFromYoloResults(image, predictions);
+                }
+            }
+            catch (Exception ex)
+            {
+                reason = $"DL检测异常: {ex.Message}";
+                _logger.Error(ex, $"步骤{step.StepNumber} DL异常");
+            }
+
+            return (passed, reason, results, record);
+        }
+
+        /// <summary>
+        /// 执行混合检测逻辑：YOLOv8 负责 AR 显示和初步定位，VisionPro 负责最终精密判定
+        /// </summary>
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record)> RunHybridLogic(ICogImage image, WorkStep step, CogToolBlock toolBlock)
+        {
+            // 1. 先跑深度学习 (YOLO) - 主要是为了获取 AR 效果 (框选物体)
+            var yoloResult = await RunDeepLearningLogic(image, step);
+            
+            // 默认使用 YOLO 的 Record 
+            var finalRecord = yoloResult.Record;
+            
+            // 2. 如果 YOLO 识别到了物体 (Passed=true)，则进一步调用 VisionPro 进行精密测量
+            if (yoloResult.Passed)
+            {
+                if (toolBlock != null)
+                {
+                    // 调用传统的 VisionPro 检测
+                    var vpResult = await RunVisionInspection(image, toolBlock, step);
+                    
+                    // 3. 结果融合
+                    // 最终判定结果以 VisionPro 为准 (精密测量)
+                    bool finalPassed = vpResult.Passed;
+                    string finalReason = vpResult.Reason;
+                    var finalResults = vpResult.Results;
+                    
+                    // 4. Record 融合
+                    // 把 VisionPro 的图形叠加到 YOLO Record 中
+                    if (vpResult.Record != null && vpResult.Record.SubRecords != null && finalRecord != null)
+                    {
+                        foreach (ICogRecord sub in vpResult.Record.SubRecords)
+                        {
+                            // 只添加图形部分，避免覆盖 YOLO 的图像
+                            if (sub.ContentType == typeof(ICogGraphic) || sub.ContentType == typeof(ICogGraphicInteractive))
+                            {
+                                finalRecord.SubRecords.Add(sub); 
+                            }
+                        }
+                    }
+                    
+                    if (!finalPassed)
+                    {
+                        finalReason = $"YOLO定位成功但VP失败: {vpResult.Reason}";
+                    }
+
+                    return (finalPassed, finalReason, finalResults, finalRecord);
+                }
+                else
+                {
+                    // 如果没有配置 ToolBlock，仅返回 YOLO 结果 (带警告)
+                     return (yoloResult.Passed, "未配置VisionPro工具，仅YOLO通过", yoloResult.Results, finalRecord);
+                }
+            }
+            
+            // YOLO 没识别到，直接返回 YOLO 的失败结果
+            return yoloResult;
+        }
+
+        /// <summary>
         /// 执行模板匹配
         /// </summary>
         private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record)> RunTemplateMatch(ICogImage image, CogToolBlock cogToolBlock, WorkStep step)
         {
-
             var results = new Dictionary<string, double>();
             ICogRecord record = null;
-            CogToolBlock toolBlock = null;
+
+            if (cogToolBlock == null)
+            {
+                return (false, "ToolBlock未加载", results, null);
+            }
+            
+            CogToolBlock toolBlock = cogToolBlock; // 直接使用传入的实例
 
             async void FireDebug(string message)
             {
@@ -1101,12 +1288,6 @@ namespace Audio900.Services
 
             try
             {
-                if (!_stepToolBlocks.TryGetValue(step.StepNumber, out toolBlock))
-                {
-                    _logger.Warn($"步骤 {step.StepNumber}: 未加载 ToolBlock");
-                    return (false, "视觉检测异常", results, null);
-                }
-
                 lock (toolBlock)
                 {
                     if (toolBlock.Inputs.Contains("InputImage"))
@@ -1245,7 +1426,13 @@ namespace Audio900.Services
             
             var results = new Dictionary<string, double>();
             ICogRecord record = null;
-            CogToolBlock toolBlock = null;
+            
+            if (cogToolBlock == null)
+            {
+                return (false, "ToolBlock未加载", results, null);
+            }
+
+            CogToolBlock toolBlock = cogToolBlock;
 
             async void FireDebug(string message)
             {
@@ -1273,12 +1460,6 @@ namespace Audio900.Services
 
             try
             {
-                if (!_stepToolBlocks.TryGetValue(step.StepNumber, out toolBlock))
-                {
-                    _logger.Warn($"步骤 {step.StepNumber}: 未加载 ToolBlock");
-                    return (false, "视觉检测异常", results, null);
-                }
-
                 lock (toolBlock)
                 {
                     if (toolBlock.Inputs.Contains("InputImage"))
