@@ -357,7 +357,7 @@ namespace Audio900
             try
             {
                 // 先检测相机数量
-                int detectedCameraCount = CameraService.GetCameraCount();
+                int detectedCameraCount = 1;/*CameraService.GetCameraCount();*/
                 LoggerService.Info($"检测到 {detectedCameraCount} 个相机");
 
                 if (detectedCameraCount == 0)
@@ -450,20 +450,23 @@ namespace Audio900
         {
             try
             {
+
+                //var hiddenPreviewHost = new Panel
+                //{
+                //    Size = new Size(640, 480),
+                //    Location = new Point(-2000, -2000),
+                //    Visible = false
+                //};
+
                 var display = new CogRecordDisplay
                 {
                     Dock = DockStyle.Fill,
                     BackColor = Color.Black,
-                    AutoFit = true
+                    //AutoFit = true
                 };
 
-                var hiddenPreviewHost = new Panel
-                {
-                    Size = new Size(640, 480),
-                    Location = new Point(-2000, -2000),
-                    Visible = false
-                };
-                panelCameraDisplay.Controls.Add(hiddenPreviewHost);
+                
+                //panelCameraDisplay.Controls.Add(hiddenPreviewHost);
 
                 panelCameraDisplay.Controls.Add(display);
                 display.BringToFront();
@@ -471,7 +474,7 @@ namespace Audio900
                 display.VerticalScrollBar = false;
                 _cogDisplays.Add(display);
 
-                _cameraService.SetWindowHandle(hiddenPreviewHost.Handle);
+                //_cameraService.SetWindowHandle(hiddenPreviewHost.Handle);
 
                 // 初始化单个相机
                 bool success = await _cameraService.InitializeCamera(this);
@@ -712,13 +715,6 @@ namespace Audio900
                     return;
                 }
 
-                // 【新增】如果该相机正在 AR 模式，完全屏蔽纯视频流，全权交给 InspectionResultReady 来画
-                //if (_isArModeActiveByCamera.ContainsKey(e.CameraIndex) && _isArModeActiveByCamera[e.CameraIndex])
-                //{
-                //    return;
-                //}
-
-
                 // 检查该相机是否处于冻结状态（正在显示检测结果）
                 if (_freezeUntilByCameraIndex.ContainsKey(e.CameraIndex))
                 {
@@ -741,11 +737,19 @@ namespace Audio900
                 }
 
                 var display = _cogDisplays[e.CameraIndex];
-                // 只更新图像，不频繁调用Fit，避免CPU占用率过高
-                if (display.Image != e.Image)
+
+                // 检查当前显示控件里是否已有图像，如果有，且不是同一张图，则必须释放旧图
+                if (display.Image != null && display.Image != e.Image)
                 {
-                     display.Image = e.Image;
+                    var oldImage = display.Image as IDisposable;
+                    // 先断开引用
+                    display.Image = null;
+                    // 再销毁内存
+                    oldImage?.Dispose();
                 }
+
+                // 赋值新图
+                display.Image = e.Image;
             }
             catch (Exception ex)
             {

@@ -282,28 +282,6 @@ namespace Audio900.Services
         #endregion
 
         #region 相机检测
-        /// <summary>
-        /// 获取当前最新的一帧图像（深拷贝，防止多线程冲突）
-        /// </summary>
-        public ICogImage GetLatestFrameCopy()
-        {
-            lock (_frameLock)
-            {
-                if (_latestFrame != null)
-                {
-                    return CopyImage(_latestFrame);
-                }
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// 获取多相机模式下的子相机列表用于AR跟踪等需要访问各个相机的场景
-        /// </summary>
-        public List<CameraService> GetCameras()
-        {
-            return _isMultiCameraMode ? _cameras : null;
-        }
 
         /// <summary>
         /// 获取配置的相机数量直接读取配置文件
@@ -371,13 +349,13 @@ namespace Audio900.Services
                 _parentControl = parentControl;
 
                 // 优先尝试初始化1960型号相机
-                bool init1960Success = TryInitialize1960Camera();
-                if (init1960Success)
-                {
-                    _cameraType = CameraType.Oumit1960;
-                    _isInitialized = true;
-                    return true;
-                }
+                //bool init1960Success = TryInitialize1960Camera();
+                //if (init1960Success)
+                //{
+                //    _cameraType = CameraType.Oumit1960;
+                //    _isInitialized = true;
+                //    return true;
+                //}
 
                 // 1960初始化失败,尝试1000型号
                 bool init1000Success = TryInitialize1000Camera();
@@ -537,6 +515,13 @@ namespace Audio900.Services
 
                         lock (_frameLock)
                         {
+                            // 如果 _latestFrame 之前有图，必须先释放！
+                            if (_latestFrame != null && _latestFrame is IDisposable oldFrame)
+                            {
+                                oldFrame.Dispose();
+                            }
+
+                            // 深拷贝新的一帧 (CopyImage 内部也生成了新对象，需要注意)
                             _latestFrame = CopyImage(cogImage);
                         }
 
@@ -552,20 +537,41 @@ namespace Audio900.Services
 
                         if (_parentControl != null && !_parentControl.IsDisposed)
                         {
-                            _parentControl.BeginInvoke(new Action(() =>
+                            // 临时创建 UI 副本，防止跨线程争用导致异常
+                            ICogImage uiImage = CopyImage(cogImage);
+                            _parentControl.Invoke(new Action(() =>
                             {
                                 try
                                 {
                                     if (cogImage != null)
                                     {
-                                        ImageCaptured?.Invoke(this, cogImage);
+                                        ImageCaptured?.Invoke(this, uiImage);
                                     }
                                 }
                                 catch (Exception ex)
                                 {
                                     LoggerService.Error(ex, $"图像事件触发失败: {ex.Message}");
                                 }
+                                //finally
+                                //{
+                                //    // 6. 终极防线：当前循环结束，必须销毁源头 cogImage
+                                //    // 这一步不做，100% 内存暴涨
+                                //    if (cogImage != null && cogImage is IDisposable disp)
+                                //    {
+                                //        disp.Dispose();
+                                //        uiImage = null;
+                                //    }
+
+                                //    // 注意：imageForUi 不能在这里释放，因为它传给了 BeginInvoke，是异步使用的。
+                                //    // imageForUi 的生命周期转交给了 UI 线程。
+                                //}
                             }));
+
+                            if (uiImage != null && uiImage is IDisposable uiDisp)
+                            {
+                                uiDisp.Dispose();
+                                uiImage = null;
+                            }
                         }
 
                         Thread.Sleep(33);
@@ -593,7 +599,7 @@ namespace Audio900.Services
                 {
                     LoggerService.Error(ex, $"采集线程异常: {ex.Message}");
                     Thread.Sleep(100);
-                }
+                }            
             }
         }
 
@@ -1066,6 +1072,9 @@ namespace Audio900.Services
             }
             catch (Exception ex)
             {
+                // 紧急内存回收
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
                 LoggerService.Error(ex, $"图像复制失败: {ex.Message}");
                 return null;
             }
