@@ -239,11 +239,12 @@ namespace Audio900.Services
         /// </summary>
         public CameraService GetCamera(int index)
         {
-            if (!_isMultiCameraMode)
-            {
-                throw new InvalidOperationException("当前不是多相机模式");
-            }
-            return index >= 0 && index < _cameras.Count ? _cameras[index] : null;
+            //if (!_isMultiCameraMode)
+            //{
+            //    throw new InvalidOperationException("当前不是多相机模式");
+            //}
+            return _cameras[0];
+            //return index >= 0 && index < _cameras.Count ? _cameras[index] : null;
         }
 
         /// <summary>
@@ -511,67 +512,46 @@ namespace Audio900.Services
 
                         ICogImage cogImage = ConvertBGRDataToCogImage(data, w, h);
 
-                        if (cogImage == null) continue;
-
-                        lock (_frameLock)
+                        if (cogImage != null)
                         {
-                            // 如果 _latestFrame 之前有图，必须先释放！
-                            if (_latestFrame != null && _latestFrame is IDisposable oldFrame)
+                            ICogImage safeImageForUi = null;
+                            lock (_frameLock)
                             {
-                                oldFrame.Dispose();
+                                // CopyImage 执行了 CopyPixels，生成了深拷贝图像，内存独立安全
+                                _latestFrame = CopyImage(cogImage);
+                                safeImageForUi = _latestFrame;
                             }
 
-                            // 深拷贝新的一帧 (CopyImage 内部也生成了新对象，需要注意)
-                            _latestFrame = CopyImage(cogImage);
-                        }
+                            _newFrameSignal.Set();
 
-                        if (_videoRecordingService != null && _videoRecordingService.IsRecording)
-                        {
-                            Bitmap bitmap = CreateBitmapFromCameraData(data, w, h, bpp);
-                            if (bitmap != null)
-                            {
-                                _videoRecordingService.WriteFrameDirect(bitmap);
-                                bitmap.Dispose();
-                            }
-                        }
 
-                        if (_parentControl != null && !_parentControl.IsDisposed)
-                        {
-                            // 临时创建 UI 副本，防止跨线程争用导致异常
-                            ICogImage uiImage = CopyImage(cogImage);
-                            _parentControl.Invoke(new Action(() =>
+                            if (_videoRecordingService != null && _videoRecordingService.IsRecording)
                             {
-                                try
+                                Bitmap bitmap = CreateBitmapFromCameraData(data, w, h, bpp);
+                                if (bitmap != null)
                                 {
-                                    if (cogImage != null)
+                                    _videoRecordingService.WriteFrameDirect(bitmap);
+                                    bitmap.Dispose();
+                                }
+                            }
+
+                            if (_parentControl != null && !_parentControl.IsDisposed)
+                            {
+                                var imageToSend = safeImageForUi;
+                                _parentControl.BeginInvoke(new Action(() =>
+                                {
+                                    try
                                     {
-                                        ImageCaptured?.Invoke(this, uiImage);
+                                        // 使用安全的深拷贝图像触发事件，而不是原始的 cogImage
+                                        if (imageToSend != null)
+                                            ImageCaptured?.Invoke(this, imageToSend);
                                     }
-                                }
-                                catch (Exception ex)
-                                {
-                                    LoggerService.Error(ex, $"图像事件触发失败: {ex.Message}");
-                                }
-                                //finally
-                                //{
-                                //    // 6. 终极防线：当前循环结束，必须销毁源头 cogImage
-                                //    // 这一步不做，100% 内存暴涨
-                                //    if (cogImage != null && cogImage is IDisposable disp)
-                                //    {
-                                //        disp.Dispose();
-                                //        uiImage = null;
-                                //    }
-
-                                //    // 注意：imageForUi 不能在这里释放，因为它传给了 BeginInvoke，是异步使用的。
-                                //    // imageForUi 的生命周期转交给了 UI 线程。
-                                //}
-                            }));
-
-                            if (uiImage != null && uiImage is IDisposable uiDisp)
-                            {
-                                uiDisp.Dispose();
-                                uiImage = null;
-                            }
+                                    catch (Exception ex)
+                                    {
+                                        LoggerService.Error(ex, $"图像事件触发失败: {ex.Message}");
+                                    }
+                                }));
+                            }                          
                         }
 
                         Thread.Sleep(33);
@@ -783,7 +763,7 @@ namespace Audio900.Services
                         // 
                         LoggerService.Warn("单次拍照取的旧图CaptureSnapshotAsync，说明采集线程可能卡死了");
                         return null;
-                    }         
+                    }
                 }
 
                 if (_cameraType == CameraType.Oumit1960)
@@ -1036,6 +1016,7 @@ namespace Audio900.Services
             }
         }
 
+        
         private ICogImage ConvertRgbBufferToCogImage(IntPtr rgbBuffer, int width, int height)
         {
             try

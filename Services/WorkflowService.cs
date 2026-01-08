@@ -17,6 +17,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Reflection;
 
 namespace Audio900.Services
 {
@@ -50,8 +51,9 @@ namespace Audio900.Services
         // ToolBlock 缓存
         private Dictionary<int, CogToolBlock> _stepToolBlocks = new Dictionary<int, CogToolBlock>();
         
-        // Deep Learning 模型缓存 (ModelPath -> Service)
-        private Dictionary<string, YoloV8Service> _loadedModels = new Dictionary<string, YoloV8Service>();
+        // Deep Learning 模型全局实例
+        private YoloV8Service _globalYoloService;
+        private string _loadedGlobalModelPath;
 
         // 相机锁机制，防止同一相机并发访问冲突
         private static Dictionary<int, SemaphoreSlim> _cameraLocks = new Dictionary<int, SemaphoreSlim>();
@@ -140,39 +142,58 @@ namespace Audio900.Services
                     );
 
                     _stepToolBlocks.Clear();
-                    _loadedModels.Clear();
+                    
+                    // 1. 加载全局深度学习模型 (从固定路径加载)
+                    // 策略变更：固定加载程序目录下 GlobalModel 文件夹内的 .onnx 模型
+                    string globalModelDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GlobalModel");
+                    string modelPath = null;
+
+                    if (Directory.Exists(globalModelDir))
+                    {
+                        var onnxFiles = Directory.GetFiles(globalModelDir, "*.onnx");
+                        if (onnxFiles.Length > 0)
+                        {
+                            modelPath = onnxFiles[0];
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(modelPath))
+                    {
+                        try
+                        {
+                            // 如果路径变了，或者服务未初始化，则重新加载
+                            if (_globalYoloService == null || _loadedGlobalModelPath != modelPath)
+                            {
+                                _globalYoloService?.Dispose();
+
+                                if (File.Exists(modelPath))
+                                {
+                                    _globalYoloService = new YoloV8Service();
+                                    _globalYoloService.LoadModel(modelPath, null);
+                                    _loadedGlobalModelPath = modelPath;
+                                    _logger.Info($"全局模型已加载: {modelPath}");
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            string errMsg = $"全局模型加载失败: {ex.Message}";
+                            _logger.Error(errMsg);
+                            MessageBox.Show(errMsg, "模型加载错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                    }
+                    else
+                    {
+                        string msg = "未找到全局深度学习模型！\r\n请确保程序目录下 GlobalModel 文件夹内存在 .onnx 模型文件。";
+                        _logger.Error(msg);
+                        // 提示用户
+                        MessageBox.Show(msg, "缺少模型", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
 
                     foreach (var step in _currentTemplate.WorkSteps)
                     {
                         string stepFolder = Path.Combine(templatePath, $"Step{step.StepNumber}");
                         
-                        // 加载深度学习模型
-                        if (step.AlgorithmType == 1 && !string.IsNullOrEmpty(step.ModelPath))
-                        {
-                            try 
-                            {
-                                if (!_loadedModels.ContainsKey(step.ModelPath))
-                                {
-                                    if (File.Exists(step.ModelPath))
-                                    {
-                                        var svc = new YoloV8Service();
-                                        // 这里可以传入标签列表，如果需要的话。暂时传 null
-                                        svc.LoadModel(step.ModelPath, null); 
-                                        _loadedModels[step.ModelPath] = svc;
-                                        _logger.Info($"步骤 {step.StepNumber}: 已加载模型 {step.ModelPath}");
-                                    }
-                                    else
-                                    {
-                                         _logger.Error($"步骤 {step.StepNumber}: 模型文件不存在 {step.ModelPath}");
-                                    }
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.Error($"步骤 {step.StepNumber}: 模型加载失败 {ex.Message}");
-                            }
-                        }
-
                         // 优先加载 ToolBlockPath (VisionPro 模式)
                         if (!string.IsNullOrEmpty(step.ToolBlockPath) && File.Exists(step.ToolBlockPath))
                         {
@@ -356,7 +377,8 @@ namespace Audio900.Services
             try
             {
                 // 验证相机
-                var camera = _cameraService.GetCamera(step.CameraIndex);
+                //var camera = _cameraService.GetCamera(step.CameraIndex);
+               var camera = _cameraService;
                 if (camera == null)
                 {
                     _logger.Error($"步骤{step.StepNumber}: 无法获取相机索引 {step.CameraIndex}");
@@ -367,15 +389,15 @@ namespace Audio900.Services
                     return;
                 }
 
-                if (!_stepToolBlocks.ContainsKey(step.StepNumber))
-                {
-                    _logger.Error($"步骤{step.StepNumber}: ToolBlock 未加载");
-                    step.Status = "检测失败";
-                    step.FailureReason = "ToolBlock 未加载";
-                    UpdateStepStatus(step, "检测失败");
-                    OnStepCompleted?.Invoke(step);
-                    return;
-                }
+                //if (!_stepToolBlocks.ContainsKey(step.StepNumber))
+                //{
+                //    _logger.Error($"步骤{step.StepNumber}: ToolBlock 未加载");
+                //    step.Status = "检测失败";
+                //    step.FailureReason = "ToolBlock 未加载";
+                //    UpdateStepStatus(step, "检测失败");
+                //    OnStepCompleted?.Invoke(step);
+                //    return;
+                //}
 
                 // 确保相机已启动
                 if (!camera.IsRunning)
@@ -385,7 +407,7 @@ namespace Audio900.Services
                     await Task.Delay(500); // 等待相机稳定
                 }
 
-                _cameraService._capture = false;
+                //_cameraService._capture = false; // 独立的线程采集关闭
 
                 await Task.Run(async() =>
                 {
@@ -408,7 +430,7 @@ namespace Audio900.Services
                             // 2. 运行视觉检测
                             (bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record) result;
 
-                            if (step.AlgorithmType == 1)
+                            if (step.AlgorithmType == 0)
                             {
                                 var toolBlock = _stepToolBlocks.ContainsKey(step.StepNumber) ? _stepToolBlocks[step.StepNumber] : null;
                                 result = await RunHybridLogic(liveImage, step, toolBlock);
@@ -419,28 +441,38 @@ namespace Audio900.Services
                             }
 
                             // 触发结果事件，用于UI显示 (AR效果)
-                            InspectionResultReady?.Invoke(this, new InspectionResultEventArgs 
-                            { 
+                            //InspectionResultReady?.Invoke(this, new InspectionResultEventArgs 
+                            //{ 
+                            //    Image = liveImage,
+                            //    Record = result.Record,
+                            //    Results = result.Results,
+                            //    IsPassed = result.Passed,
+                            //    Step = step
+                            //});
+
+                            // 模板匹配的触发事件
+                            InTemplateMatching?.Invoke(this, new InspectionResultEventArgs
+                            {
                                 Image = liveImage,
                                 Record = result.Record,
                                 Results = result.Results,
                                 IsPassed = result.Passed,
                                 Step = step
                             });
-                        
-                            if (result.Passed)
-                            {
-                                if (!passTimer.IsRunning)
-                                {
-                                    passTimer.Start();                                
-                                }
+
+                            //if (result.Passed)
+                            //{
+                            //    if (!passTimer.IsRunning)
+                            //    {
+                            //        passTimer.Start();                                
+                            //    }
                   
-                                step.Status = "检测通过";
-                                UpdateStepStatus(step, "检测通过");
+                            //    step.Status = "检测通过";
+                            //    UpdateStepStatus(step, "检测通过");
                                    
-                                OnStepCompleted?.Invoke(step);
-                                break;                              
-                            }
+                            //    OnStepCompleted?.Invoke(step);
+                            //    break;                              
+                            //}
                         }
 
                         catch (Exception ex)
@@ -1141,21 +1173,19 @@ namespace Audio900.Services
 
             try
             {
-                if (string.IsNullOrEmpty(step.ModelPath))
+                // 使用全局模型
+                if (_globalYoloService == null)
                 {
-                     return (false, "模型路径为空", results, null);
+                     return (false, "全局模型未加载", results, null);
                 }
 
-                if (!_loadedModels.TryGetValue(step.ModelPath, out var dlService))
-                {
-                     return (false, "模型未加载", results, null);
-                }
+                var dlService = _globalYoloService;
 
                 // 转换图像
                 using (var bitmap = image.ToBitmap())
                 {
                     // 运行推理
-                    var predictions = await Task.Run(() => dlService.Predict(bitmap, (float)step.ConfidenceThreshold));
+                    var predictions = await Task.Run(() => dlService.Predict(bitmap, 0.25f));
 
                     // 简单判定逻辑：识别到目标即为通过
                     // 实际应用中可能需要判断 ClassId 或 数量

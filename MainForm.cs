@@ -739,17 +739,18 @@ namespace Audio900
                 var display = _cogDisplays[e.CameraIndex];
 
                 // 检查当前显示控件里是否已有图像，如果有，且不是同一张图，则必须释放旧图
-                if (display.Image != null && display.Image != e.Image)
+                //if (display.Image != null && display.Image != e.Image)
                 {
-                    var oldImage = display.Image as IDisposable;
-                    // 先断开引用
-                    display.Image = null;
-                    // 再销毁内存
-                    oldImage?.Dispose();
+                    //var oldImage = display.Image as IDisposable;
+                    //// 先断开引用
+                    //display.Image = null;
+                    //// 再销毁内存
+                    //oldImage?.Dispose();
+                    // 赋值新图
+                    display.Image = e.Image;
                 }
 
-                // 赋值新图
-                display.Image = e.Image;
+               
             }
             catch (Exception ex)
             {

@@ -267,7 +267,7 @@ namespace Audio900.Models
         /// <summary>
         /// 置信度阈值 (0.0 - 1.0)
         /// </summary>
-        private double _confidenceThreshold = 0.5;
+        private double _confidenceThreshold = 0.1;
         public double ConfidenceThreshold
         {
             get => _confidenceThreshold;
