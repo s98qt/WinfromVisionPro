@@ -461,16 +461,26 @@ namespace Audio900.Services
                                 Predictions = result.Predictions
                             });
 
+                            //InspectionResultReady?.Invoke(this, new InspectionResultEventArgs
+                            //{
+                            //    Image = liveImage,
+                            //    Record = result.Record,
+                            //    Results = result.Results,
+                            //    IsPassed = result.Passed,
+                            //    Step = step,
+                            //    Predictions = result.Predictions
+                            //});
+                            
                             //if (result.Passed)
                             //{
                             //    if (!passTimer.IsRunning)
                             //    {
                             //        passTimer.Start();                                
                             //    }
-                  
+
                             //    step.Status = "检测通过";
                             //    UpdateStepStatus(step, "检测通过");
-                                   
+
                             //    OnStepCompleted?.Invoke(step);
                             //    break;                              
                             //}
@@ -1176,14 +1186,13 @@ namespace Audio900.Services
 
             try
             {
+                // 使用全局模型
+                if (_globalYoloService == null)
                 {
-                     return (false, "模型路径为空", results, null, predictions);
+                    return (false, "深度学习模型未加载", results, null, predictions);
                 }
 
-                if (!_loadedModels.TryGetValue(step.ModelPath, out var dlService))
-                {
-                     return (false, "模型未加载", results, null, predictions);
-                }
+                var dlService = _globalYoloService;
 
                 // 转换图像
                 using (var bitmap = image.ToBitmap())

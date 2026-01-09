@@ -1087,13 +1087,17 @@ namespace Audio900
                     // 只有当 StaticGraphics 有东西时才 Clear
                    /* if (display.StaticGraphics. > 0)*/ display.StaticGraphics.Clear();
                     if (display.InteractiveGraphics.Count > 0) display.InteractiveGraphics.Clear();
-
-                    // 5. 更新 Record和图像
-                    if (e.Record != null)
+                    // 如果有 YOLO 预测结果，使用 StaticGraphics 显示识别框
+                    if (e.Predictions != null && e.Predictions.Count > 0)
                     {
-                        display.Record = e.Record;
-                        display.Image = e.Image;
+                        VisionProHelper.ApplyYoloResultsToDisplay(display, e.Image, e.Predictions);
                     }
+                    //// 5. 更新 Record和图像
+                    //if (e.Record != null)
+                    //{
+                    //    display.Record = e.Record;
+                    //    display.Image = e.Image;
+                    //}
                     else if (e.Image != null && display.Image != e.Image)
                     {
                         display.Image = e.Image;
@@ -1183,11 +1187,11 @@ namespace Audio900
 
         private void OnInspectionResultReady(object sender, InspectionResultEventArgs e)
         {
-            if (InvokeRequired)
-            {
-                BeginInvoke(new EventHandler<InspectionResultEventArgs>(OnInspectionResultReady), sender, e);
-                return;
-            }
+            //if (InvokeRequired)
+            //{
+            //    BeginInvoke(new EventHandler<InspectionResultEventArgs>(OnInspectionResultReady), sender, e);
+            //    return;
+            //}
 
             try
             {
