@@ -1215,8 +1215,13 @@ namespace Audio900
                         display.StaticGraphics.Clear();
                         display.InteractiveGraphics.Clear();
 
-                        // 优先使用 Record，因为它包含所有工具的图形结果（模板匹配框、距离线等）
-                        if (e.Record != null)
+                        // 如果有 YOLO 预测结果，使用 StaticGraphics 显示识别框
+                        if (e.Predictions != null && e.Predictions.Count > 0)
+                        {
+                            VisionProHelper.ApplyYoloResultsToDisplay(display, e.Image, e.Predictions);
+                        }
+                        // 否则优先使用 Record，因为它包含所有工具的图形结果（模板匹配框、距离线等）
+                        else if (e.Record != null)
                         {
                             display.Record = e.Record;
                         }

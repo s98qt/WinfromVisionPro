@@ -378,7 +378,7 @@ namespace Audio900.Services
             {
                 // 验证相机
                 //var camera = _cameraService.GetCamera(step.CameraIndex);
-               var camera = _cameraService;
+                var camera = _cameraService;
                 if (camera == null)
                 {
                     _logger.Error($"步骤{step.StepNumber}: 无法获取相机索引 {step.CameraIndex}");
@@ -428,7 +428,7 @@ namespace Audio900.Services
                             }
 
                             // 2. 运行视觉检测
-                            (bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record) result;
+                            (bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloPrediction> Predictions) result;
 
                             if (step.AlgorithmType == 0)
                             {
@@ -457,7 +457,8 @@ namespace Audio900.Services
                                 Record = result.Record,
                                 Results = result.Results,
                                 IsPassed = result.Passed,
-                                Step = step
+                                Step = step,
+                                Predictions = result.Predictions
                             });
 
                             //if (result.Passed)
@@ -609,7 +610,7 @@ namespace Audio900.Services
                     // 执行视觉检测（包含参数公差比对）
                     _logger.Info($"执行了吗？执行视觉检测（包含参数公差比对）");
                     
-                    (bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record) inspection;
+                    (bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloPrediction> Predictions) inspection;
 
                     if (step.AlgorithmType == 1)
                     {
@@ -630,7 +631,8 @@ namespace Audio900.Services
                         Record = inspection.Record,
                         Results = inspection.Results,
                         IsPassed = inspection.Passed,
-                        Step = step
+                        Step = step,
+                        Predictions = inspection.Predictions
                     });
 
                     // 步骤4：判断匹配结果
@@ -1164,28 +1166,30 @@ namespace Audio900.Services
         /// <summary>
         /// 执行深度学习检测逻辑
         /// </summary>
-        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record)> RunDeepLearningLogic(ICogImage image, WorkStep step)
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloPrediction> Predictions)> RunDeepLearningLogic(ICogImage image, WorkStep step)
         {
             var results = new Dictionary<string, double>();
             ICogRecord record = null;
             string reason = "";
             bool passed = false;
+            List<YoloPrediction> predictions = new List<YoloPrediction>();
 
             try
             {
-                // 使用全局模型
-                if (_globalYoloService == null)
                 {
-                     return (false, "全局模型未加载", results, null);
+                     return (false, "模型路径为空", results, null, predictions);
                 }
 
-                var dlService = _globalYoloService;
+                if (!_loadedModels.TryGetValue(step.ModelPath, out var dlService))
+                {
+                     return (false, "模型未加载", results, null, predictions);
+                }
 
                 // 转换图像
                 using (var bitmap = image.ToBitmap())
                 {
                     // 运行推理
-                    var predictions = await Task.Run(() => dlService.Predict(bitmap, 0.25f));
+                    predictions = await Task.Run(() => dlService.Predict(bitmap, (float)step.ConfidenceThreshold));
 
                     // 简单判定逻辑：识别到目标即为通过
                     // 实际应用中可能需要判断 ClassId 或 数量
@@ -1207,8 +1211,8 @@ namespace Audio900.Services
                         results["Score"] = 0;
                     }
 
-                    // 生成 VisionPro 显示记录
-                    record = VisionProHelper.CreateRecordFromYoloResults(image, predictions);
+                    // 创建简单的图像记录（不包含图形，图形将在 MainForm 中通过 StaticGraphics 添加）
+                    record = new CogRecord("Image", typeof(ICogImage), CogRecordUsageConstants.Result, false, image, "Image");
                 }
             }
             catch (Exception ex)
@@ -1217,13 +1221,13 @@ namespace Audio900.Services
                 _logger.Error(ex, $"步骤{step.StepNumber} DL异常");
             }
 
-            return (passed, reason, results, record);
+            return (passed, reason, results, record, predictions);
         }
 
         /// <summary>
         /// 执行混合检测逻辑：YOLOv8 负责 AR 显示和初步定位，VisionPro 负责最终精密判定
         /// </summary>
-        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record)> RunHybridLogic(ICogImage image, WorkStep step, CogToolBlock toolBlock)
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloPrediction> Predictions)> RunHybridLogic(ICogImage image, WorkStep step, CogToolBlock toolBlock)
         {
             // 1. 先跑深度学习 (YOLO) - 主要是为了获取 AR 效果 (框选物体)
             var yoloResult = await RunDeepLearningLogic(image, step);
@@ -1264,12 +1268,12 @@ namespace Audio900.Services
                         finalReason = $"YOLO定位成功但VP失败: {vpResult.Reason}";
                     }
 
-                    return (finalPassed, finalReason, finalResults, finalRecord);
+                    return (finalPassed, finalReason, finalResults, finalRecord, yoloResult.Predictions);
                 }
                 else
                 {
                     // 如果没有配置 ToolBlock，仅返回 YOLO 结果 (带警告)
-                     return (yoloResult.Passed, "未配置VisionPro工具，仅YOLO通过", yoloResult.Results, finalRecord);
+                     return (yoloResult.Passed, "未配置VisionPro工具，仅YOLO通过", yoloResult.Results, finalRecord, yoloResult.Predictions);
                 }
             }
             
@@ -1280,14 +1284,14 @@ namespace Audio900.Services
         /// <summary>
         /// 执行模板匹配
         /// </summary>
-        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record)> RunTemplateMatch(ICogImage image, CogToolBlock cogToolBlock, WorkStep step)
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloPrediction> Predictions)> RunTemplateMatch(ICogImage image, CogToolBlock cogToolBlock, WorkStep step)
         {
             var results = new Dictionary<string, double>();
             ICogRecord record = null;
 
             if (cogToolBlock == null)
             {
-                return (false, "ToolBlock未加载", results, null);
+                return (false, "ToolBlock未加载", results, null, new List<YoloPrediction>());
             }
             
             CogToolBlock toolBlock = cogToolBlock; // 直接使用传入的实例
@@ -1369,7 +1373,7 @@ namespace Audio900.Services
                                 var reason = $"缺少输出参数: {param.Name}";
                                 _logger.Info(reason);
                                 FireDebug(reason);
-                                return (false, "视觉检测异常", results, record);
+                                return (false, "视觉检测异常", results, record, new List<YoloPrediction>());
                             }
 
                             double actualVal = results[param.Name];
@@ -1386,11 +1390,11 @@ namespace Audio900.Services
                                     Step = step
                                 });
 
-                                var reason = $"参数[{param.Name}]超差: 实际{actualVal:F3} 标准{param.StandardValue:F3} 偏差{diff:F3} > 公差{param.Tolerance}";
+                                var reason = $"参数[{param.Name}]超差: 实际{actualVal:F3} 标净{param.StandardValue:F3} 偏差{diff:F3} > 公差{param.Tolerance}";
                                 FireDebug(reason);
                               
 
-                                return (false, "视觉检测异常", results, record);
+                                return (false, "视觉检测异常", results, record, new List<YoloPrediction>());
                             }
                         }
 
@@ -1402,18 +1406,18 @@ namespace Audio900.Services
                             Step = step
                         });
 
-                        return (true, "参数检测通过", results, record);
+                        return (true, "参数检测通过", results, record, new List<YoloPrediction>());
                     }
                     else
                     {
                         if (toolBlock.RunStatus.Result == CogToolResultConstants.Accept)
-                            return (true, "工具运行成功(无参数检查)", results, record);
+                            return (true, "工具运行成功(无参数检查)", results, record, new List<YoloPrediction>());
                         else
                         {
                             var reason = $"工具运行失败: {toolBlock.RunStatus.Message}";
                             _logger.Info(reason);
                             FireDebug(reason);
-                            return (false, "视觉检测异常", results, record);
+                            return (false, "视觉检测异常", results, record, new List<YoloPrediction>());
                         }
                     }
                 }
@@ -1444,14 +1448,14 @@ namespace Audio900.Services
                     {
                     }
                 }
-                return (false, "视觉检测异常", results, null);
+                return (false, "视觉检测异常", results, null, new List<YoloPrediction>());
             }
         }
 
         /// <summary>
         /// 执行视觉检测：运行工具块并校验参数公差
         /// </summary>
-        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record)> RunVisionInspection(ICogImage image, CogToolBlock cogToolBlock, WorkStep step)
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloPrediction> Predictions)> RunVisionInspection(ICogImage image, CogToolBlock cogToolBlock, WorkStep step)
         {
             
             var results = new Dictionary<string, double>();
@@ -1459,7 +1463,7 @@ namespace Audio900.Services
             
             if (cogToolBlock == null)
             {
-                return (false, "ToolBlock未加载", results, null);
+                return (false, "ToolBlock未加载", results, null, new List<YoloPrediction>());
             }
 
             CogToolBlock toolBlock = cogToolBlock;
@@ -1541,7 +1545,7 @@ namespace Audio900.Services
                                 var reason = $"缺少输出参数: {param.Name}";
                                 _logger.Info(reason);
                                 FireDebug(reason);
-                                return (false, "视觉检测异常", results, record);
+                                return (false, "视觉检测异常", results, record, new List<YoloPrediction>());
                             }
                                 
                             double actualVal = results[param.Name];
@@ -1553,22 +1557,22 @@ namespace Audio900.Services
                                 var reason = $"参数[{param.Name}]超差: 实际{actualVal:F3} 标准{param.StandardValue:F3} 偏差{diff:F3} > 公差{param.Tolerance}";
                                 _logger.Info(reason);
                                 FireDebug(reason);
-                                return (false, "视觉检测异常", results, record);
+                                return (false, "视觉检测异常", results, record, new List<YoloPrediction>());
                             }
                         }
-                        return (true, "参数检测通过", results, record);
+                        return (true, "参数检测通过", results, record, new List<YoloPrediction>());
                     }
                     else
                     {                            
                         // 既无参数也无Score，仅判断工具运行状态
                         if (toolBlock.RunStatus.Result == CogToolResultConstants.Accept)
-                            return (true, "工具运行成功(无参数检查)", results, record);
+                            return (true, "工具运行成功(无参数检查)", results, record, new List<YoloPrediction>());
                         else
                         {
                             var reason = $"工具运行失败: {toolBlock.RunStatus.Message}";
                             _logger.Info(reason);
                             FireDebug(reason);
-                            return (false, "视觉检测异常", results, record);
+                            return (false, "视觉检测异常", results, record, new List<YoloPrediction>());
                         }
                     }
                 }
@@ -1599,7 +1603,7 @@ namespace Audio900.Services
                     {
                     }
                 }
-                return (false, "视觉检测异常", results, null);
+                return (false, "视觉检测异常", results, null, new List<YoloPrediction>());
             }         
         }
 
@@ -1748,6 +1752,7 @@ namespace Audio900.Services
         public Dictionary<string, double> Results { get; set; }
         public bool IsPassed { get; set; }
         public WorkStep Step { get; set; }
+        public List<YoloPrediction> Predictions { get; set; }
     }
 
     public class ToolBlockDebugEventArgs : EventArgs
