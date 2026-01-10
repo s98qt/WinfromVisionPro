@@ -146,130 +146,6 @@ namespace Audio900
         }
 
         /// <summary>
-        /// 开启指定相机的实时AR跟踪
-        /// </summary>
-        //private void StartLiveTracking(int cameraIndex)
-        //{
-        //    if (cameraIndex < 0 || cameraIndex >= _isLiveTrackingByCamera.Length)
-        //        return;
-
-        //    if (_currentTemplate == null)
-        //    {
-        //        MessageBox.Show("请先加载模板！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        //        return;
-        //    }
-
-        //    if (_cameraService == null || !_cameraService.IsConnected)
-        //    {
-        //        MessageBox.Show("相机未连接！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        //        return;
-        //    }
-
-        //    if (cameraIndex >= _cogDisplays.Count)
-        //    {
-        //        MessageBox.Show($"相机{cameraIndex}显示区域不存在！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        //        return;
-        //    }
-
-        //    // 准备工具（如果还没有提取）
-        //    if (_liveTrackToolByCamera[cameraIndex] == null)
-        //    {
-        //        PrepareLiveTrackingTools();
-        //    }
-
-        //    if (_liveTrackToolByCamera[cameraIndex] == null)
-        //    {
-        //        MessageBox.Show($"相机{cameraIndex}未找到可用的 PMAlign 工具！\n请确保模板中包含 CogPMAlignTool。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        //        return;
-        //    }
-
-        //    _isLiveTrackingByCamera[cameraIndex] = true;
-        //    UpdateStatus($"相机{cameraIndex} 实时AR跟踪已启动");
-            
-        //    _trackingCancellationByCamera[cameraIndex] = new CancellationTokenSource();
-        //    var token = _trackingCancellationByCamera[cameraIndex].Token;
-        //    var tool = _liveTrackToolByCamera[cameraIndex];
-            
-        //    // 开启后台任务循环
-        //    _trackingTaskByCamera[cameraIndex] = Task.Run(async () => 
-        //    {
-        //        while (_isLiveTrackingByCamera[cameraIndex] && !token.IsCancellationRequested)
-        //        {
-        //            try
-        //            {
-        //                // 1. 主动拉取最新图像
-        //                ICogImage imageToProcess = null;
-                        
-        //                // 双相机模式：需要从对应的相机获取图像
-        //                if (_cameraService.ConnectedCameraCount > 1)
-        //                {
-        //                    // 多相机模式：从对应的子相机获取
-        //                    var cameras = _cameraService.GetCameras();
-                            
-        //                    if (cameras != null && cameraIndex < cameras.Count)
-        //                    {
-        //                        imageToProcess = cameras[cameraIndex].GetLatestFrameCopy();
-        //                    }
-        //                }
-        //                else
-        //                {
-        //                    // 单相机模式：直接获取
-        //                    imageToProcess = _cameraService.GetLatestFrameCopy();
-        //                }
-
-        //                if (imageToProcess != null)
-        //                {
-        //                    // 2. 【直接运行核心工具】而非整个 ToolBlock
-        //                    // 设置输入图像
-        //                    if (imageToProcess is CogImage8Grey greyImage)
-        //                    {
-        //                        tool.InputImage = greyImage;
-        //                    }
-        //                    else if (imageToProcess is ICogImage cogImg)
-        //                    {
-        //                        // 如果不是灰度图，尝试转换或直接赋值
-        //                        tool.InputImage = cogImg as CogImage8Grey;
-        //                    }
-                            
-        //                    if (tool.InputImage != null)
-        //                    {
-        //                        // 运行工具（比 ToolBlock.Run() 快得多）
-        //                        tool.Run();
-
-        //                        // 3. 生成 AR 效果记录
-        //                        var record = tool.CreateLastRunRecord();
-
-        //                        // 4. 刷新 UI
-        //                        int displayIndex = cameraIndex; // 捕获局部变量
-        //                        this.BeginInvoke(new Action(() => 
-        //                        {
-        //                            if (displayIndex < _cogDisplays.Count && _isLiveTrackingByCamera[displayIndex])
-        //                            {
-        //                                // 设置 Record 实现 AR 效果
-        //                                _cogDisplays[displayIndex].Record = record;
-        //                            }
-        //                        }));
-        //                    }
-                            
-        //                    // 释放图像
-        //                    if (imageToProcess is IDisposable disp)
-        //                    {
-        //                        disp.Dispose();
-        //                    }
-        //                }
-        //            }
-        //            catch (Exception ex)
-        //            {
-        //                LoggerService.Error(ex, $"相机{cameraIndex}实时跟踪异常");
-        //            }
-
-        //            // 控制帧率，避免 CPU 100%
-        //            await Task.Delay(10, token); 
-        //        }
-        //    }, token);
-        //}
-
-        /// <summary>
         /// 扫码枪输入产品SN后自动触发作业流程
         /// </summary>
         private async void txtProductSN_KeyDown(object sender, KeyEventArgs e)
@@ -885,13 +761,19 @@ namespace Audio900
             _workflowService.OnStepCompleted += OnWorkflowStepCompleted;
             _workflowService.RecordingStatusChanged += OnWorkflowRecordingStatusChanged;
             _workflowService.InspectionResultReady += OnInspectionResultReady;
-            _workflowService.InTemplateMatching += OnTemplateMatching;
+            _workflowService.InOnYoloDetection += OnYoloDetection;
             _workflowService.ToolBlockDebugReady += OnToolBlockDebugReady;
             _workflowService.EnableDebugPopup = chkDebugMode.Checked;
             
             // 相机连接状态现在通过 CameraService.IsConnected 属性自动获取
         }
 
+
+        /// <summary>
+        /// 用于VisionPro的调试模式
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void OnToolBlockDebugReady(object sender, ToolBlockDebugEventArgs e)
         {
             if (InvokeRequired)
@@ -1057,8 +939,8 @@ namespace Audio900
         private readonly Font _bigFont = new Font("Microsoft Sans Serif", 48, FontStyle.Bold);
         private readonly Font _midFont = new Font("Microsoft Sans Serif", 32, FontStyle.Bold);
 
-        // 标记某个相机是否正在进行 AR 实时显示
-        private void OnTemplateMatching(object sender, InspectionResultEventArgs e)
+        // 用于Yolo进行过程检测的显示
+        private void OnYoloDetection(object sender, InspectionResultEventArgs e)
         {
             // 1. 基础校验
             if (e?.Step == null) return;
@@ -1068,38 +950,33 @@ namespace Audio900
             // 2. 喂狗 (保持 AR 独占)
             if (cameraIndex < _lastArUpdateTime.Length)
                 _lastArUpdateTime[cameraIndex] = DateTime.Now;
-            SplitContainer split;
             // 3. UI 更新
             this.BeginInvoke(new Action(() =>
             {
                 try
                 {
                     var display = _cogDisplays[cameraIndex];
+         
+                    // 清空旧图形
+                    display.StaticGraphics.Clear();
+                    if (display.InteractiveGraphics.Count > 0) 
+                        display.InteractiveGraphics.Clear();
 
-                    //split = panelCameraDisplay.Controls.OfType<TableLayoutPanel>().FirstOrDefault()?.Controls.OfType<SplitContainer>().FirstOrDefault();
-                    //if (split != null)
-                    //{
-                    //    display = split.Panel2.Controls.OfType<CogRecordDisplay>().FirstOrDefault();
-                    //}
-               
-
-                    // 4. 清理旧图形
-                    // 只有当 StaticGraphics 有东西时才 Clear
-                   /* if (display.StaticGraphics. > 0)*/ display.StaticGraphics.Clear();
-                    if (display.InteractiveGraphics.Count > 0) display.InteractiveGraphics.Clear();
-                    // 如果有 YOLO 预测结果，使用 StaticGraphics 显示识别框
+                    // 使用 VisionProHelper 统一处理 YOLO 过程检测的显示逻辑
+                    // 包括：ROI 框、检测框颜色判断、中心点标记
                     if (e.Predictions != null && e.Predictions.Count > 0)
                     {
-                        VisionProHelper.ApplyYoloResultsToDisplay(display, e.Image, e.Predictions);
+                        VisionProHelper.ApplyYoloResultsToDisplay(display, e.Image, e.Predictions, e.Step, e.IsInROI);
+                        
+                        // 如果步骤通过，播放提示音
+                        if (e.IsPassed && e.IsInROI)
+                        {
+                            PlayBeepSound();
+                        }
                     }
-                    //// 5. 更新 Record和图像
-                    //if (e.Record != null)
-                    //{
-                    //    display.Record = e.Record;
-                    //    display.Image = e.Image;
-                    //}
                     else if (e.Image != null && display.Image != e.Image)
                     {
+                        // 没有检测结果时，只更新图像
                         display.Image = e.Image;
                     }
 
@@ -1109,26 +986,7 @@ namespace Audio900
                         double w = e.Image.Width;
                         double h = e.Image.Height;
                         double x = w / 2.0;
-                        double y = h / 2.0;
-
-                        //// 不要画遮挡视线的图形，只画边框
-                        //var rect = new CogRectangleAffine();
-                        //// 稍微往里缩一点，保证边框能被看见
-                        //rect.SetCenterLengthsRotationSkew(x, y, w - 50, h - 50, 0, 0);
-                        //rect.Color = CogColorConstants.Red;
-                        //rect.LineWidthInScreenPixels = 10; // 边框加粗
-                        //rect.LineStyle = CogGraphicLineStyleConstants.Solid; // 实线
-
-                        //display.StaticGraphics.Add(rect, "Status");
-
-                        //// 绘制 FAIL 文字
-                        //var failLabel = new CogGraphicLabel();
-                        //failLabel.Text = "调整中..."; //
-                        //failLabel.Color = CogColorConstants.Red;
-                        //failLabel.Font = _bigFont; // 使用全局 Font 对象 ---
-                        //failLabel.Alignment = CogGraphicLabelAlignmentConstants.TopCenter;
-                        //failLabel.SetXYText(x, 100, failLabel.Text); 
-                        //display.StaticGraphics.Add(failLabel, "Status");
+                        double y = h / 2.0; 
 
                         // 显示偏差值
                         if (e.Results != null && TryGetResultValue(e.Results, out double diff, "ToleranceDiff"))
@@ -1154,44 +1012,23 @@ namespace Audio900
                         //passLabel.SetXYText(e.Image.Width /*/ 2.0*/, 100, "PASS");
                         //display.StaticGraphics.Add(passLabel, "Status");
                     }
-
-
-                    //if (e.IsPassed)
-                    //{
-                    //    // --- 成功状态 ---
-                    //    var passLabel = new CogGraphicLabel();
-                    //    passLabel.Text = "OK";
-                    //    passLabel.Color = CogColorConstants.Green;
-                    //    passLabel.Font = new Font("Microsoft Sans Serif", 32, FontStyle.Bold);
-                    //    passLabel.Alignment = CogGraphicLabelAlignmentConstants.TopRight; // 显示在角落
-                    //    passLabel.SetXYText(10, 10, ""); // 坐标需根据实际情况调整
-                    //    display.StaticGraphics.Add(passLabel, "Status");
-                    //}
-                    //else
-                    //{
-                    //    var diffLabel = new CogGraphicLabel();
-                    //    // 显示实时偏差
-                    //    diffLabel.Text = $"偏差: {toleranceDiff:F3}";
-                    //    diffLabel.Color = CogColorConstants.Yellow; // 用黄色提示正在调整
-                    //    diffLabel.Font = new Font("Microsoft Sans Serif", 24, FontStyle.Bold);
-                    //    diffLabel.Alignment = CogGraphicLabelAlignmentConstants.BottomCenter;
-                    //    // 放在画面底部，不遮挡主体
-                    //    diffLabel.SetXYText(e.Image.Width / 2, e.Image.Height - 50, "");
-                    //    display.StaticGraphics.Add(diffLabel, "DiffData");
-                    //}
-
                 }
                 catch { }
             }));
         }
 
+        /// <summary>
+        /// 用于VisionPro量测
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void OnInspectionResultReady(object sender, InspectionResultEventArgs e)
         {
-            //if (InvokeRequired)
-            //{
-            //    BeginInvoke(new EventHandler<InspectionResultEventArgs>(OnInspectionResultReady), sender, e);
-            //    return;
-            //}
+            if (InvokeRequired)
+            {
+                BeginInvoke(new EventHandler<InspectionResultEventArgs>(OnInspectionResultReady), sender, e);
+                return;
+            }
 
             try
             {
@@ -1211,7 +1048,7 @@ namespace Audio900
 
                 if (_cogDisplays.Count > 0)
                 {
-                    this.BeginInvoke(new Action(() =>                   
+                    this.BeginInvoke(new Action(() =>
                     {
                         var display = _cogDisplays[cameraIndex];
 
@@ -1219,90 +1056,18 @@ namespace Audio900
                         display.StaticGraphics.Clear();
                         display.InteractiveGraphics.Clear();
 
-                        // 设置图像
-                        if (e.Image != null && display.Image != e.Image)
-                        {
-                            display.Image = e.Image;
-                        }
-
-                        // 如果有 YOLO 预测结果，使用过程检测的显示逻辑
-                        if (e.Predictions != null && e.Predictions.Count > 0)
-                        {
-                            // 1. 始终绘制 ROI 框（白色细框，不可交互）
-                            if (e.Step.EnableProcessDetection && e.Step.DetectionROI.Width > 0)
-                            {
-                                var roiRect = new CogRectangleAffine();
-                                double roiCenterX = e.Step.DetectionROI.X + e.Step.DetectionROI.Width / 2.0;
-                                double roiCenterY = e.Step.DetectionROI.Y + e.Step.DetectionROI.Height / 2.0;
-                                
-                                // 使用保存的旋转角度
-                                roiRect.SetCenterLengthsRotationSkew(
-                                    roiCenterX, roiCenterY,
-                                    e.Step.DetectionROI.Width, e.Step.DetectionROI.Height, 
-                                    e.Step.DetectionROIRotation, 0);
-                                roiRect.Color = CogColorConstants.White;
-                                roiRect.LineWidthInScreenPixels = 2;
-                                roiRect.Interactive = false;  // 运行模式：不可交互
-                                display.StaticGraphics.Add(roiRect, "ROI");
-                                
-                                // 添加步骤编号标签
-                                var stepLabel = new CogGraphicLabel();
-                                stepLabel.SetXYText(roiCenterX + e.Step.DetectionROI.Width / 2.0 + 10, 
-                                                   roiCenterY - e.Step.DetectionROI.Height / 2.0, 
-                                                   e.Step.StepNumber.ToString());
-                                stepLabel.Color = CogColorConstants.White;
-                                stepLabel.Font = new Font("Arial", 16, FontStyle.Bold);
-                                stepLabel.Alignment = CogGraphicLabelAlignmentConstants.BaselineLeft;
-                                display.StaticGraphics.Add(stepLabel, "StepNumber");
-                            }
-                            
-                            // 2. 绘制 YOLO 检测框（根据中心点位置选择颜色）
-                            foreach (var pred in e.Predictions)
-                            {
-                                double centerX = pred.Rectangle.X + pred.Rectangle.Width / 2.0;
-                                double centerY = pred.Rectangle.Y + pred.Rectangle.Height / 2.0;
-                                
-                                // 判断颜色：中心点在 ROI 内 = 绿色，否则 = 黄色
-                                CogColorConstants boxColor = e.IsInROI ? CogColorConstants.Green : CogColorConstants.Yellow;
-                                
-                                // 绘制识别框
-                                var rect = new CogRectangleAffine();
-                                rect.SetCenterLengthsRotationSkew(centerX, centerY, 
-                                    pred.Rectangle.Width, pred.Rectangle.Height, 0, 0);
-                                rect.Color = boxColor;
-                                rect.LineWidthInScreenPixels = 3;
-                                rect.Interactive = false;
-                                display.StaticGraphics.Add(rect, "DetectionBox");
-                                
-                                // 3. 绘制中心点（红色小点）
-                                var centerDot = new CogCircle();
-                                centerDot.CenterX = centerX;
-                                centerDot.CenterY = centerY;
-                                centerDot.Radius = 5;
-                                centerDot.Color = CogColorConstants.Red;
-                                centerDot.LineWidthInScreenPixels = 2;
-                                display.StaticGraphics.Add(centerDot, "CenterPoint");
-                                
-                                // 4. 添加标签
-                                var label = new CogGraphicLabel();
-                                label.SetXYText(pred.Rectangle.X, Math.Max(0, pred.Rectangle.Y - 20), 
-                                    $"{pred.Label} : {pred.Confidence:P0}");
-                                label.Color = boxColor;
-                                label.Font = new Font("Arial", 10, FontStyle.Bold);
-                                label.Alignment = CogGraphicLabelAlignmentConstants.BaselineLeft;
-                                display.StaticGraphics.Add(label, "DetectionLabel");
-                            }
-                            
-                            // 5. 如果步骤通过，播放提示音
-                            if (e.IsPassed && e.IsInROI)
-                            {
-                                PlayBeepSound();
-                            }
-                        }
-                        // 否则优先使用 Record，因为它包含所有工具的图形结果（模板匹配框、距离线等）
-                        else if (e.Record != null)
+                        // 优先使用 Record，因为它包含所有工具的图形结果（模板匹配框、距离线等）
+                        if (e.Record != null)
                         {
                             display.Record = e.Record;
+                        }
+                        else if (e.Image != null)
+                        {
+                            // 只有当图像对象不同时才更新
+                            if (display.Image != e.Image)
+                            {
+                                display.Image = e.Image;
+                            }
                         }
 
                         if (!e.IsPassed && e.Image != null)
@@ -1351,7 +1116,7 @@ namespace Audio900
                         }
 
                     }));
-                   
+
 
                     // 移除此处的 Fit，防止 StaticGraphics 导致图像缩小
                     //display.Fit(true);

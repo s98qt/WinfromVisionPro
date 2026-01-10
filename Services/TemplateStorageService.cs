@@ -77,7 +77,11 @@ namespace Audio900.Services
                         step.ShowFailurePrompt,
                         step.FailurePromptMessage,
                         step.ToolBlockPath,
-                        step.Parameters
+                        step.Parameters,
+                        step.DetectionROI, // 过程检测搜索ROI
+                        step.DetectionROIRotation,
+                        step.EnableProcessDetection,
+                        step.TargetClassIds
                     };
                     
                     string stepMetadataJson = JsonConvert.SerializeObject(stepMetadata, Formatting.Indented);
@@ -179,7 +183,11 @@ namespace Audio900.Services
                         IsArMode = stepMetadata["IsArMode"]?.ToObject<bool>() ?? false,
                         ShowFailurePrompt = stepMetadata["ShowFailurePrompt"]?.ToObject<bool>() ?? false,
                         FailurePromptMessage = stepMetadata["FailurePromptMessage"]?.ToString() ?? "",
-                        ToolBlockPath = stepMetadata["ToolBlockPath"]?.ToString() ?? ""
+                        ToolBlockPath = stepMetadata["ToolBlockPath"]?.ToString() ?? "",
+                        DetectionROI = (RectangleF)stepMetadata["DetectionROI"]?.ToObject<RectangleF>(),
+                        DetectionROIRotation = stepMetadata["DetectionROIRotation"]?.ToObject<double>() ?? 0,
+                        EnableProcessDetection = stepMetadata["IsArMode"]?.ToObject<bool>() ?? false,
+                        TargetClassIds = stepMetadata["TargetClassIds"]?.ToObject<List<int>>()
                     };
 
                     // 加载参数列表

@@ -80,8 +80,8 @@ namespace Audio900.Services
         public event Action<string, Color> RecordingStatusChanged; // status, color
 
         // 新增：检测结果事件，携带图像和图形
-        public event EventHandler<InspectionResultEventArgs> InspectionResultReady;
-        public event EventHandler<InspectionResultEventArgs> InTemplateMatching; // 模板匹配
+        public event EventHandler<InspectionResultEventArgs> InspectionResultReady; // 用于结果的精准量测
+        public event EventHandler<InspectionResultEventArgs> InOnYoloDetection; // 用于Yolo的过程检测
 
         public event EventHandler<ToolBlockDebugEventArgs> ToolBlockDebugReady;
 
@@ -236,7 +236,6 @@ namespace Audio900.Services
                         if (batch.Count > 0) // 单次检测
                         {
                             if (batch == null || batch.Count == 0) return;
-
                            await ExecuteStandardCheckAsync(batch[0]);// 最后一步为最终检测
                             // 动态计算批处理超时时间
                             //int maxTimeout = batch.Max(s => s.Timeout > 0 ? s.Timeout : 5000);
@@ -362,7 +361,11 @@ namespace Audio900.Services
             }
         }
 
-        // 独立的 AR 逻辑
+        /// <summary>
+        /// 用Yolo进行过程检测的逻辑
+        /// </summary>
+        /// <param name="step">作业步骤</param>
+        /// <returns></returns>
         private async Task ExecuteArLoopAsync(WorkStep step)
         {
             UpdateStatus($"步骤{step.StepNumber}: 进入AR装配模式...");
@@ -376,9 +379,8 @@ namespace Audio900.Services
 
             try
             {
-                // 验证相机
-                //var camera = _cameraService.GetCamera(step.CameraIndex);
-                var camera = _cameraService;
+                //var camera = _cameraService.GetCamera(step.CameraIndex); // 双相机模式
+                var camera = _cameraService; // 单相机模式
                 if (camera == null)
                 {
                     _logger.Error($"步骤{step.StepNumber}: 无法获取相机索引 {step.CameraIndex}");
@@ -388,16 +390,6 @@ namespace Audio900.Services
                     OnStepCompleted?.Invoke(step);
                     return;
                 }
-
-                //if (!_stepToolBlocks.ContainsKey(step.StepNumber))
-                //{
-                //    _logger.Error($"步骤{step.StepNumber}: ToolBlock 未加载");
-                //    step.Status = "检测失败";
-                //    step.FailureReason = "ToolBlock 未加载";
-                //    UpdateStepStatus(step, "检测失败");
-                //    OnStepCompleted?.Invoke(step);
-                //    return;
-                //}
 
                 // 确保相机已启动
                 if (!camera.IsRunning)
@@ -427,38 +419,17 @@ namespace Audio900.Services
                                 continue;
                             }
 
-                            // 2. 运行视觉检测
                             (bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloPrediction> Predictions) result;
-
-                            if (step.AlgorithmType == 0)
-                            {
-                                var toolBlock = _stepToolBlocks.ContainsKey(step.StepNumber) ? _stepToolBlocks[step.StepNumber] : null;
-                                result = await RunHybridLogic(liveImage, step, toolBlock);
-                            }
-                            else
-                            {
-                                result = await RunTemplateMatch(liveImage, _stepToolBlocks.ContainsKey(step.StepNumber) ? _stepToolBlocks[step.StepNumber] : null, step);
-                            }
-
-                            // 触发结果事件，用于UI显示 (AR效果)
-                            //InspectionResultReady?.Invoke(this, new InspectionResultEventArgs 
-                            //{ 
-                            //    Image = liveImage,
-                            //    Record = result.Record,
-                            //    Results = result.Results,
-                            //    IsPassed = result.Passed,
-                            //    Step = step
-                            //});
-
-                            // 模板匹配的触发事件
+                            var toolBlock = _stepToolBlocks.ContainsKey(step.StepNumber) ? _stepToolBlocks[step.StepNumber] : null;
+                            result = await RunHybridLogic(liveImage, step, toolBlock);
                             bool isInROI = result.Results.ContainsKey("IsInROI") && result.Results["IsInROI"] > 0;
                             PointF? centerPoint = null;
                             if (result.Results.ContainsKey("CenterX") && result.Results.ContainsKey("CenterY"))
                             {
                                 centerPoint = new PointF((float)result.Results["CenterX"], (float)result.Results["CenterY"]);
                             }
-                            
-                            InTemplateMatching?.Invoke(this, new InspectionResultEventArgs
+
+                            InOnYoloDetection?.Invoke(this, new InspectionResultEventArgs
                             {
                                 Image = liveImage,
                                 Record = result.Record,
@@ -469,16 +440,6 @@ namespace Audio900.Services
                                 IsInROI = isInROI,
                                 CenterPoint = centerPoint
                             });
-
-                            //InspectionResultReady?.Invoke(this, new InspectionResultEventArgs
-                            //{
-                            //    Image = liveImage,
-                            //    Record = result.Record,
-                            //    Results = result.Results,
-                            //    IsPassed = result.Passed,
-                            //    Step = step,
-                            //    Predictions = result.Predictions
-                            //});
                             
                             //if (result.Passed)
                             //{
@@ -540,7 +501,7 @@ namespace Audio900.Services
         }
 
         /// <summary>
-        /// 执行单个作业步骤
+        /// 执行VisionPro的量测逻辑
         /// </summary>
         private async Task ExecuteStandardCheckAsync(WorkStep step)
         {
@@ -566,10 +527,9 @@ namespace Audio900.Services
                 ICogImage validImage = null;
                 stepPassed = false;
                 int totalCheckCount = 0;
-                const int CHECK_DELAY = 20;           // 每次检测间隔（毫秒）
+                const int CHECK_DELAY = 20; // 每次检测间隔（毫秒）
 
                 while (true)
-                    //while (!stepPassed && timeoutWatch.ElapsedMilliseconds < timeoutMs)
                 {
                     totalCheckCount++;
 
@@ -1304,231 +1264,23 @@ namespace Audio900.Services
         }
 
         /// <summary>
-        /// 执行混合检测逻辑：YOLOv8 负责 AR 显示和初步定位，VisionPro 负责最终精密判定
+        /// 执行过程检测逻辑：只用YOLOv8进行AR 显示
         /// </summary>
         private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloPrediction> Predictions)> RunHybridLogic(ICogImage image, WorkStep step, CogToolBlock toolBlock)
         {
-            // 1. 先跑深度学习 (YOLO) - 主要是为了获取 AR 效果 (框选物体)
+            // 跑深度学习 (YOLO) - 主要是为了获取 AR 效果 (框选物体)
             var yoloResult = await RunDeepLearningLogic(image, step);
             
             // 默认使用 YOLO 的 Record 
             var finalRecord = yoloResult.Record;
             
-            // 2. 如果 YOLO 识别到了物体 (Passed=true)，则进一步调用 VisionPro 进行精密测量
             if (yoloResult.Passed)
-            {
-                if (toolBlock != null)
-                {
-                    // 调用传统的 VisionPro 检测
-                    var vpResult = await RunVisionInspection(image, toolBlock, step);
-                    
-                    // 3. 结果融合
-                    // 最终判定结果以 VisionPro 为准 (精密测量)
-                    bool finalPassed = vpResult.Passed;
-                    string finalReason = vpResult.Reason;
-                    var finalResults = vpResult.Results;
-                    
-                    // 4. Record 融合
-                    // 把 VisionPro 的图形叠加到 YOLO Record 中
-                    if (vpResult.Record != null && vpResult.Record.SubRecords != null && finalRecord != null)
-                    {
-                        foreach (ICogRecord sub in vpResult.Record.SubRecords)
-                        {
-                            // 只添加图形部分，避免覆盖 YOLO 的图像
-                            if (sub.ContentType == typeof(ICogGraphic) || sub.ContentType == typeof(ICogGraphicInteractive))
-                            {
-                                finalRecord.SubRecords.Add(sub); 
-                            }
-                        }
-                    }
-                    
-                    if (!finalPassed)
-                    {
-                        finalReason = $"YOLO定位成功但VP失败: {vpResult.Reason}";
-                    }
-
-                    return (finalPassed, finalReason, finalResults, finalRecord, yoloResult.Predictions);
-                }
-                else
-                {
-                    // 如果没有配置 ToolBlock，仅返回 YOLO 结果 (带警告)
-                     return (yoloResult.Passed, "未配置VisionPro工具，仅YOLO通过", yoloResult.Results, finalRecord, yoloResult.Predictions);
-                }
+            {  
+                return (yoloResult.Passed, "YOLO通过", yoloResult.Results, finalRecord, yoloResult.Predictions);             
             }
             
             // YOLO 没识别到，直接返回 YOLO 的失败结果
             return yoloResult;
-        }
-
-        /// <summary>
-        /// 执行模板匹配
-        /// </summary>
-        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloPrediction> Predictions)> RunTemplateMatch(ICogImage image, CogToolBlock cogToolBlock, WorkStep step)
-        {
-            var results = new Dictionary<string, double>();
-            ICogRecord record = null;
-
-            if (cogToolBlock == null)
-            {
-                return (false, "ToolBlock未加载", results, null, new List<YoloPrediction>());
-            }
-            
-            CogToolBlock toolBlock = cogToolBlock; // 直接使用传入的实例
-
-            async void FireDebug(string message)
-            {
-                if (!EnableDebugPopup) return;
-                try
-                {
-                    if (record == null && toolBlock != null)
-                    {
-                        record = toolBlock.CreateLastRunRecord();
-                    }
-
-                    ToolBlockDebugReady?.Invoke(this, new ToolBlockDebugEventArgs
-                    {
-                        StepNumber = step.StepNumber,
-                        Step = step,
-                        ToolBlock = toolBlock,
-                        Record = record,
-                        Message = message
-                    });
-                }
-                catch
-                {
-                }
-            }
-
-            try
-            {
-                lock (toolBlock)
-                {
-                    if (toolBlock.Inputs.Contains("InputImage"))
-                    {
-                        toolBlock.Inputs["InputImage"].Value = image;
-                    }
-
-                    toolBlock.Run();
-
-                    // 创建运行记录
-                    record = toolBlock.CreateLastRunRecord();
-
-                    _logger.Info($"已运行toolBlock，{record.RecordKey},{record.SubRecords.Count}");
-                    // 调试模式：无论成功失败都弹出调试窗口
-                    if (EnableDebugPopup)
-                    {
-                        string statusMsg = toolBlock.RunStatus.Result == CogToolResultConstants.Accept
-                            ? "运行成功"
-                            : toolBlock.RunStatus.Message;
-                        FireDebug($"[{toolBlock.RunStatus.Result}] {statusMsg}");
-                    }
-
-                    // 获取输出参数
-                    foreach (CogToolBlockTerminal terminal in toolBlock.Outputs)
-                    {
-                        if (terminal.Value == null) continue;
-
-                        if (double.TryParse(terminal.Value.ToString(), out double val))
-                        {
-                            results[terminal.Name] = val;
-                        }
-                    }
-
-                    // 获取所有运行记录（图像+图形+文字）
-                    if (record == null)
-                    {
-                        record = toolBlock.CreateLastRunRecord();
-                    }
-                  
-                    // 2. 校验参数公差
-                    if (step.Parameters != null && step.Parameters.Count > 0)
-                    {
-                        foreach (var param in step.Parameters)
-                        {
-                            if (!param.IsEnabled) continue;
-
-                            if (!results.ContainsKey(param.Name))
-                            {
-                                var reason = $"缺少输出参数: {param.Name}";
-                                _logger.Info(reason);
-                                FireDebug(reason);
-                                return (false, "视觉检测异常", results, record, new List<YoloPrediction>());
-                            }
-
-                            double actualVal = results[param.Name];
-                            double diff = Math.Abs( actualVal - param.StandardValue);                         
-
-                            if (diff > param.Tolerance)
-                            {
-                                results["ToleranceDiff"] = diff;
-                                InTemplateMatching?.Invoke(this, new InspectionResultEventArgs
-                                {
-                                    Image = image,
-                                    Record = record,
-                                    IsPassed = false,
-                                    Step = step
-                                });
-
-                                var reason = $"参数[{param.Name}]超差: 实际{actualVal:F3} 标净{param.StandardValue:F3} 偏差{diff:F3} > 公差{param.Tolerance}";
-                                FireDebug(reason);
-                              
-
-                                return (false, "视觉检测异常", results, record, new List<YoloPrediction>());
-                            }
-                        }
-
-                        InTemplateMatching?.Invoke(this, new InspectionResultEventArgs
-                        {
-                            Image = image,
-                            Record = record,
-                            IsPassed = true,
-                            Step = step
-                        });
-
-                        return (true, "参数检测通过", results, record, new List<YoloPrediction>());
-                    }
-                    else
-                    {
-                        if (toolBlock.RunStatus.Result == CogToolResultConstants.Accept)
-                            return (true, "工具运行成功(无参数检查)", results, record, new List<YoloPrediction>());
-                        else
-                        {
-                            var reason = $"工具运行失败: {toolBlock.RunStatus.Message}";
-                            _logger.Info(reason);
-                            FireDebug(reason);
-                            return (false, "视觉检测异常", results, record, new List<YoloPrediction>());
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"VisionPro 运行异常: {ex.Message}");
-                FireDebug($"视觉异常: {ex.Message}");
-                if (EnableDebugPopup && toolBlock != null)
-                {
-                    try
-                    {
-                        if (record == null)
-                        {
-                            record = toolBlock.CreateLastRunRecord();
-                        }
-
-                        ToolBlockDebugReady?.Invoke(this, new ToolBlockDebugEventArgs
-                        {
-                            StepNumber = step.StepNumber,
-                            Step = step,
-                            ToolBlock = toolBlock,
-                            Record = record,
-                            Message = ex.Message
-                        });
-                    }
-                    catch
-                    {
-                    }
-                }
-                return (false, "视觉检测异常", results, null, new List<YoloPrediction>());
-            }
         }
 
         /// <summary>
@@ -1871,6 +1623,10 @@ namespace Audio900.Services
         public PointF? CenterPoint { get; set; }  // 检测物体的中心点
     }
 
+
+    /// <summary>
+    /// 调试模式使用
+    /// </summary>
     public class ToolBlockDebugEventArgs : EventArgs
     {
         public int StepNumber { get; set; }
