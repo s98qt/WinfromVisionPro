@@ -1,5 +1,6 @@
 using Cognex.VisionPro;
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
 
@@ -272,6 +273,48 @@ namespace Audio900.Models
         {
             get => _confidenceThreshold;
             set { _confidenceThreshold = value; OnPropertyChanged(nameof(ConfidenceThreshold)); }
+        }
+
+        /// <summary>
+        /// YOLO 检测区域（ROI）- 用于过程检测
+        /// 当识别物体的中心点进入此区域时，步骤通过
+        /// </summary>
+        private RectangleF _detectionROI;
+        public RectangleF DetectionROI
+        {
+            get => _detectionROI;
+            set { _detectionROI = value; OnPropertyChanged(nameof(DetectionROI)); }
+        }
+
+        /// <summary>
+        /// 是否启用过程检测模式（基于 ROI 中心点判定）
+        /// </summary>
+        private bool _enableProcessDetection = false;
+        public bool EnableProcessDetection
+        {
+            get => _enableProcessDetection;
+            set { _enableProcessDetection = value; OnPropertyChanged(nameof(EnableProcessDetection)); }
+        }
+
+        /// <summary>
+        /// 目标类别过滤（可选）- 只检测特定类别的物体
+        /// 例如：只检测"手"或"工具"
+        /// </summary>
+        private List<int> _targetClassIds;
+        public List<int> TargetClassIds
+        {
+            get => _targetClassIds;
+            set { _targetClassIds = value; OnPropertyChanged(nameof(TargetClassIds)); }
+        }
+
+        /// <summary>
+        /// ROI 旋转角度（弧度）- 用于支持旋转矩形
+        /// </summary>
+        private double _detectionROIRotation = 0;
+        public double DetectionROIRotation
+        {
+            get => _detectionROIRotation;
+            set { _detectionROIRotation = value; OnPropertyChanged(nameof(DetectionROIRotation)); }
         }
 
         // 模板图像

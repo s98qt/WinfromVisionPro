@@ -63,7 +63,11 @@ namespace Audio900.Views
                     FailurePromptMessage = step.FailurePromptMessage,
                     Status = step.Status,
                     ToolBlockPath = step.ToolBlockPath,
-                    CapturedImage = step.CapturedImage
+                    CapturedImage = step.CapturedImage,
+                    DetectionROI = step.DetectionROI,
+                    DetectionROIRotation = step.DetectionROIRotation,
+                    EnableProcessDetection = step.EnableProcessDetection,
+                    TargetClassIds = step.TargetClassIds != null ? new List<int>(step.TargetClassIds) : null
                 };
                 
                 if (step.ImageSource != null)

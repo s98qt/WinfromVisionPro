@@ -32,6 +32,9 @@ namespace Audio900.Views
             this.groupBoxStep = new System.Windows.Forms.GroupBox();
             this.tlpMain = new System.Windows.Forms.TableLayoutPanel();
             this.panelLeft = new System.Windows.Forms.Panel();
+            this.chkIsArMode = new System.Windows.Forms.CheckBox();
+            this.btnSetROI = new System.Windows.Forms.Button();
+            this.lblROIStatus = new System.Windows.Forms.Label();
             this.btnDeleteStep = new System.Windows.Forms.Button();
             this.txtFailureMessage = new System.Windows.Forms.TextBox();
             this.dgvParams = new System.Windows.Forms.DataGridView();
@@ -43,7 +46,6 @@ namespace Audio900.Views
             this.cmbCamera = new System.Windows.Forms.ComboBox();
             this.chkParallel = new System.Windows.Forms.CheckBox();
             this.pictureBoxPreview = new System.Windows.Forms.PictureBox();
-            this.chkIsArMode = new System.Windows.Forms.CheckBox();
             this.groupBoxStep.SuspendLayout();
             this.tlpMain.SuspendLayout();
             this.panelLeft.SuspendLayout();
@@ -83,6 +85,8 @@ namespace Audio900.Views
             // panelLeft
             // 
             this.panelLeft.Controls.Add(this.chkIsArMode);
+            this.panelLeft.Controls.Add(this.btnSetROI);
+            this.panelLeft.Controls.Add(this.lblROIStatus);
             this.panelLeft.Controls.Add(this.btnDeleteStep);
             this.panelLeft.Controls.Add(this.txtFailureMessage);
             this.panelLeft.Controls.Add(this.dgvParams);
@@ -99,6 +103,40 @@ namespace Audio900.Views
             this.panelLeft.Name = "panelLeft";
             this.panelLeft.Size = new System.Drawing.Size(630, 394);
             this.panelLeft.TabIndex = 0;
+            // 
+            // chkIsArMode
+            // 
+            this.chkIsArMode.AutoSize = true;
+            this.chkIsArMode.Location = new System.Drawing.Point(415, 61);
+            this.chkIsArMode.Name = "chkIsArMode";
+            this.chkIsArMode.Size = new System.Drawing.Size(120, 25);
+            this.chkIsArMode.TabIndex = 12;
+            this.chkIsArMode.Text = "循环检测";
+            this.chkIsArMode.UseVisualStyleBackColor = true;
+            this.chkIsArMode.CheckedChanged += new System.EventHandler(this.chkIsArMode_CheckedChanged);
+            // 
+            // btnSetROI
+            // 
+            this.btnSetROI.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(255)))), ((int)(((byte)(193)))), ((int)(((byte)(7)))));
+            this.btnSetROI.Enabled = false;
+            this.btnSetROI.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnSetROI.Location = new System.Drawing.Point(481, 15);
+            this.btnSetROI.Name = "btnSetROI";
+            this.btnSetROI.Size = new System.Drawing.Size(140, 30);
+            this.btnSetROI.TabIndex = 13;
+            this.btnSetROI.Text = "设置检测区域";
+            this.btnSetROI.UseVisualStyleBackColor = false;
+            this.btnSetROI.Click += new System.EventHandler(this.btnSetROI_Click);
+            // 
+            // lblROIStatus
+            // 
+            this.lblROIStatus.AutoSize = true;
+            this.lblROIStatus.ForeColor = System.Drawing.Color.Gray;
+            this.lblROIStatus.Location = new System.Drawing.Point(541, 61);
+            this.lblROIStatus.Name = "lblROIStatus";
+            this.lblROIStatus.Size = new System.Drawing.Size(73, 21);
+            this.lblROIStatus.TabIndex = 14;
+            this.lblROIStatus.Text = "未设置";
             // 
             // btnDeleteStep
             // 
@@ -203,7 +241,7 @@ namespace Audio900.Views
             // chkParallel
             // 
             this.chkParallel.AutoSize = true;
-            this.chkParallel.Location = new System.Drawing.Point(300, 60);
+            this.chkParallel.Location = new System.Drawing.Point(289, 60);
             this.chkParallel.Name = "chkParallel";
             this.chkParallel.Size = new System.Drawing.Size(120, 25);
             this.chkParallel.TabIndex = 11;
@@ -223,17 +261,6 @@ namespace Audio900.Views
             this.pictureBoxPreview.TabIndex = 1;
             this.pictureBoxPreview.TabStop = false;
             this.pictureBoxPreview.DoubleClick += new System.EventHandler(this.pictureBoxPreview_DoubleClick);
-            // 
-            // chkIsArMode
-            // 
-            this.chkIsArMode.AutoSize = true;
-            this.chkIsArMode.Location = new System.Drawing.Point(492, 60);
-            this.chkIsArMode.Name = "chkIsArMode";
-            this.chkIsArMode.Size = new System.Drawing.Size(120, 25);
-            this.chkIsArMode.TabIndex = 12;
-            this.chkIsArMode.Text = "循环检测";
-            this.chkIsArMode.UseVisualStyleBackColor = true;
-            this.chkIsArMode.CheckedChanged += new System.EventHandler(this.chkIsArMode_CheckedChanged);
             // 
             // StepControl
             // 
@@ -270,5 +297,7 @@ namespace Audio900.Views
         private System.Windows.Forms.Button btnDeleteStep;
         private System.Windows.Forms.PictureBox pictureBoxPreview;
         private System.Windows.Forms.CheckBox chkIsArMode;
+        private System.Windows.Forms.Button btnSetROI;
+        private System.Windows.Forms.Label lblROIStatus;
     }
 }

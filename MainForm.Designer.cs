@@ -376,9 +376,9 @@
             this.panelRight.Controls.Add(this.lblResult);
             this.panelRight.Dock = System.Windows.Forms.DockStyle.Fill;
             this.panelRight.Location = new System.Drawing.Point(0, 0);
-            this.panelRight.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.panelRight.Margin = new System.Windows.Forms.Padding(4);
             this.panelRight.Name = "panelRight";
-            this.panelRight.Padding = new System.Windows.Forms.Padding(6, 6, 6, 6);
+            this.panelRight.Padding = new System.Windows.Forms.Padding(6);
             this.panelRight.Size = new System.Drawing.Size(316, 838);
             this.panelRight.TabIndex = 0;
             // 
@@ -390,7 +390,7 @@
             this.cmbTemplates.Font = new System.Drawing.Font("微软雅黑", 9F);
             this.cmbTemplates.FormattingEnabled = true;
             this.cmbTemplates.Location = new System.Drawing.Point(4, 4);
-            this.cmbTemplates.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.cmbTemplates.Margin = new System.Windows.Forms.Padding(4);
             this.cmbTemplates.Name = "cmbTemplates";
             this.cmbTemplates.Size = new System.Drawing.Size(289, 36);
             this.cmbTemplates.TabIndex = 0;
@@ -405,7 +405,7 @@
             this.btnTemplateManage.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Bold);
             this.btnTemplateManage.ForeColor = System.Drawing.Color.White;
             this.btnTemplateManage.Location = new System.Drawing.Point(6, 167);
-            this.btnTemplateManage.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.btnTemplateManage.Margin = new System.Windows.Forms.Padding(4);
             this.btnTemplateManage.Name = "btnTemplateManage";
             this.btnTemplateManage.Size = new System.Drawing.Size(290, 49);
             this.btnTemplateManage.TabIndex = 2;
@@ -433,7 +433,7 @@
             this.flpMainSteps.BackColor = System.Drawing.Color.WhiteSmoke;
             this.flpMainSteps.FlowDirection = System.Windows.Forms.FlowDirection.TopDown;
             this.flpMainSteps.Location = new System.Drawing.Point(1, 255);
-            this.flpMainSteps.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.flpMainSteps.Margin = new System.Windows.Forms.Padding(4);
             this.flpMainSteps.Name = "flpMainSteps";
             this.flpMainSteps.Size = new System.Drawing.Size(304, 425);
             this.flpMainSteps.TabIndex = 4;
@@ -445,7 +445,7 @@
             this.panelMesStatus.Controls.Add(this.lblMesStatus);
             this.panelMesStatus.Dock = System.Windows.Forms.DockStyle.Bottom;
             this.panelMesStatus.Location = new System.Drawing.Point(6, 685);
-            this.panelMesStatus.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.panelMesStatus.Margin = new System.Windows.Forms.Padding(4);
             this.panelMesStatus.Name = "panelMesStatus";
             this.panelMesStatus.Size = new System.Drawing.Size(304, 48);
             this.panelMesStatus.TabIndex = 16;

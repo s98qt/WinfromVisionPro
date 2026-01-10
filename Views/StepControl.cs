@@ -61,6 +61,8 @@ namespace Audio900.Views
                 pictureBoxPreview.SizeMode = PictureBoxSizeMode.Zoom;
                 pictureBoxPreview.Image = Step.ImageSource;
             }
+            
+            UpdateROIStatus();
         }
 
         private void SetupGrid()
@@ -97,6 +99,51 @@ namespace Audio900.Views
         private void chkIsArMode_CheckedChanged(object sender, EventArgs e)
         {
             Step.IsArMode = chkIsArMode.Checked;
+            
+            Step.EnableProcessDetection = chkIsArMode.Checked;
+            btnSetROI.Enabled = chkIsArMode.Checked;
+            
+            UpdateROIStatus();
+        }
+
+        private void btnSetROI_Click(object sender, EventArgs e)
+        {
+            if (Step.CapturedImage == null)
+            {
+                MessageBox.Show("请先采集图像！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            
+            try
+            {
+                var setROIWindow = new SetROIWindow(Step.CapturedImage, Step.DetectionROI, Step.DetectionROIRotation);
+                if (setROIWindow.ShowDialog() == DialogResult.OK)
+                {
+                    Step.DetectionROI = setROIWindow.SelectedROI;
+                    Step.DetectionROIRotation = setROIWindow.SelectedROIRotation;
+                    UpdateROIStatus();
+                    MessageBox.Show("检测区域设置成功！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"设置检测区域失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void UpdateROIStatus()
+        {
+            if (Step.DetectionROI.Width > 0 && Step.DetectionROI.Height > 0)
+            {
+                double angleDeg = Step.DetectionROIRotation * 180.0 / Math.PI;
+                lblROIStatus.Text = $"已设置 ({Step.DetectionROI.Width:F0}x{Step.DetectionROI.Height:F0}, {angleDeg:F1}°)";
+                lblROIStatus.ForeColor = Color.Green;
+            }
+            else
+            {
+                lblROIStatus.Text = "未设置";
+                lblROIStatus.ForeColor = Color.Gray;
+            }
         }
 
         private void SetupCameraControl()

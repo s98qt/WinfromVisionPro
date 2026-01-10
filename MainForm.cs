@@ -1219,23 +1219,90 @@ namespace Audio900
                         display.StaticGraphics.Clear();
                         display.InteractiveGraphics.Clear();
 
-                        // 如果有 YOLO 预测结果，使用 StaticGraphics 显示识别框
+                        // 设置图像
+                        if (e.Image != null && display.Image != e.Image)
+                        {
+                            display.Image = e.Image;
+                        }
+
+                        // 如果有 YOLO 预测结果，使用过程检测的显示逻辑
                         if (e.Predictions != null && e.Predictions.Count > 0)
                         {
-                            VisionProHelper.ApplyYoloResultsToDisplay(display, e.Image, e.Predictions);
+                            // 1. 始终绘制 ROI 框（白色细框，不可交互）
+                            if (e.Step.EnableProcessDetection && e.Step.DetectionROI.Width > 0)
+                            {
+                                var roiRect = new CogRectangleAffine();
+                                double roiCenterX = e.Step.DetectionROI.X + e.Step.DetectionROI.Width / 2.0;
+                                double roiCenterY = e.Step.DetectionROI.Y + e.Step.DetectionROI.Height / 2.0;
+                                
+                                // 使用保存的旋转角度
+                                roiRect.SetCenterLengthsRotationSkew(
+                                    roiCenterX, roiCenterY,
+                                    e.Step.DetectionROI.Width, e.Step.DetectionROI.Height, 
+                                    e.Step.DetectionROIRotation, 0);
+                                roiRect.Color = CogColorConstants.White;
+                                roiRect.LineWidthInScreenPixels = 2;
+                                roiRect.Interactive = false;  // 运行模式：不可交互
+                                display.StaticGraphics.Add(roiRect, "ROI");
+                                
+                                // 添加步骤编号标签
+                                var stepLabel = new CogGraphicLabel();
+                                stepLabel.SetXYText(roiCenterX + e.Step.DetectionROI.Width / 2.0 + 10, 
+                                                   roiCenterY - e.Step.DetectionROI.Height / 2.0, 
+                                                   e.Step.StepNumber.ToString());
+                                stepLabel.Color = CogColorConstants.White;
+                                stepLabel.Font = new Font("Arial", 16, FontStyle.Bold);
+                                stepLabel.Alignment = CogGraphicLabelAlignmentConstants.BaselineLeft;
+                                display.StaticGraphics.Add(stepLabel, "StepNumber");
+                            }
+                            
+                            // 2. 绘制 YOLO 检测框（根据中心点位置选择颜色）
+                            foreach (var pred in e.Predictions)
+                            {
+                                double centerX = pred.Rectangle.X + pred.Rectangle.Width / 2.0;
+                                double centerY = pred.Rectangle.Y + pred.Rectangle.Height / 2.0;
+                                
+                                // 判断颜色：中心点在 ROI 内 = 绿色，否则 = 黄色
+                                CogColorConstants boxColor = e.IsInROI ? CogColorConstants.Green : CogColorConstants.Yellow;
+                                
+                                // 绘制识别框
+                                var rect = new CogRectangleAffine();
+                                rect.SetCenterLengthsRotationSkew(centerX, centerY, 
+                                    pred.Rectangle.Width, pred.Rectangle.Height, 0, 0);
+                                rect.Color = boxColor;
+                                rect.LineWidthInScreenPixels = 3;
+                                rect.Interactive = false;
+                                display.StaticGraphics.Add(rect, "DetectionBox");
+                                
+                                // 3. 绘制中心点（红色小点）
+                                var centerDot = new CogCircle();
+                                centerDot.CenterX = centerX;
+                                centerDot.CenterY = centerY;
+                                centerDot.Radius = 5;
+                                centerDot.Color = CogColorConstants.Red;
+                                centerDot.LineWidthInScreenPixels = 2;
+                                display.StaticGraphics.Add(centerDot, "CenterPoint");
+                                
+                                // 4. 添加标签
+                                var label = new CogGraphicLabel();
+                                label.SetXYText(pred.Rectangle.X, Math.Max(0, pred.Rectangle.Y - 20), 
+                                    $"{pred.Label} : {pred.Confidence:P0}");
+                                label.Color = boxColor;
+                                label.Font = new Font("Arial", 10, FontStyle.Bold);
+                                label.Alignment = CogGraphicLabelAlignmentConstants.BaselineLeft;
+                                display.StaticGraphics.Add(label, "DetectionLabel");
+                            }
+                            
+                            // 5. 如果步骤通过，播放提示音
+                            if (e.IsPassed && e.IsInROI)
+                            {
+                                PlayBeepSound();
+                            }
                         }
                         // 否则优先使用 Record，因为它包含所有工具的图形结果（模板匹配框、距离线等）
                         else if (e.Record != null)
                         {
                             display.Record = e.Record;
-                        }
-                        else if (e.Image != null)
-                        {
-                            // 只有当图像对象不同时才更新
-                            if (display.Image != e.Image)
-                            {
-                                display.Image = e.Image;
-                            }
                         }
 
                         if (!e.IsPassed && e.Image != null)
@@ -1316,6 +1383,21 @@ namespace Audio900
                 }
             }
             return false;
+        }
+
+        /// <summary>
+        /// 播放提示音
+        /// </summary>
+        private void PlayBeepSound()
+        {
+            try
+            {
+                System.Media.SystemSounds.Beep.Play();
+            }
+            catch (Exception ex)
+            {
+                LoggerService.Warn($"播放提示音失败: {ex.Message}");
+            }
         }
 
         private void OnWorkflowStatusMessageChanged(object sender, string message)

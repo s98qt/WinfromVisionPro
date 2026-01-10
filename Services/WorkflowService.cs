@@ -451,6 +451,13 @@ namespace Audio900.Services
                             //});
 
                             // 模板匹配的触发事件
+                            bool isInROI = result.Results.ContainsKey("IsInROI") && result.Results["IsInROI"] > 0;
+                            PointF? centerPoint = null;
+                            if (result.Results.ContainsKey("CenterX") && result.Results.ContainsKey("CenterY"))
+                            {
+                                centerPoint = new PointF((float)result.Results["CenterX"], (float)result.Results["CenterY"]);
+                            }
+                            
                             InTemplateMatching?.Invoke(this, new InspectionResultEventArgs
                             {
                                 Image = liveImage,
@@ -458,7 +465,9 @@ namespace Audio900.Services
                                 Results = result.Results,
                                 IsPassed = result.Passed,
                                 Step = step,
-                                Predictions = result.Predictions
+                                Predictions = result.Predictions,
+                                IsInROI = isInROI,
+                                CenterPoint = centerPoint
                             });
 
                             //InspectionResultReady?.Invoke(this, new InspectionResultEventArgs
@@ -1200,24 +1209,85 @@ namespace Audio900.Services
                     // 运行推理
                     predictions = await Task.Run(() => dlService.Predict(bitmap, (float)step.ConfidenceThreshold));
 
-                    // 简单判定逻辑：识别到目标即为通过
-                    // 实际应用中可能需要判断 ClassId 或 数量
-                    passed = predictions.Count > 0;
-                    
-                    if (passed)
+                    // 如果启用了过程检测模式
+                    if (step.EnableProcessDetection && step.DetectionROI.Width > 0 && step.DetectionROI.Height > 0)
                     {
-                        reason = $"识别成功: {predictions.Count}个目标";
-                        // 取置信度最高的目标作为分数输出
-                        var best = predictions.OrderByDescending(p => p.Confidence).First();
-                        results["Score"] = best.Confidence;
-                        results["ClassId"] = best.ClassId;
-                        results["X"] = best.Rectangle.X;
-                        results["Y"] = best.Rectangle.Y;
+                        // 过滤目标类别（如果有设置）
+                        var filteredPredictions = predictions;
+                        if (step.TargetClassIds != null && step.TargetClassIds.Count > 0)
+                        {
+                            filteredPredictions = predictions.Where(p => step.TargetClassIds.Contains(p.ClassId)).ToList();
+                        }
+
+                        // 判断是否有目标的中心点在 ROI 内
+                        bool isInROI = false;
+                        YoloPrediction targetInROI = null;
+                        PointF centerPoint = PointF.Empty;
+
+                        foreach (var pred in filteredPredictions)
+                        {
+                            // 计算中心点
+                            float centerX = pred.Rectangle.X + pred.Rectangle.Width / 2.0f;
+                            float centerY = pred.Rectangle.Y + pred.Rectangle.Height / 2.0f;
+                            
+                            // 判断中心点是否在 ROI 内（支持旋转矩形）
+                            if (IsPointInRotatedROI(centerX, centerY, step.DetectionROI, step.DetectionROIRotation))
+                            {
+                                isInROI = true;
+                                targetInROI = pred;
+                                centerPoint = new PointF(centerX, centerY);
+                                break;
+                            }
+                        }
+
+                        // 简化判定：中心点在 ROI 内即通过
+                        if (isInROI)
+                        {
+                            passed = true;
+                            reason = $"动作完成：{targetInROI.Label} 进入检测区域";
+                            results["Score"] = targetInROI.Confidence;
+                            results["CenterX"] = centerPoint.X;
+                            results["CenterY"] = centerPoint.Y;
+                            results["IsInROI"] = 1;
+                            _logger.Info($"步骤{step.StepNumber}: 过程检测通过，中心点 ({centerPoint.X:F0}, {centerPoint.Y:F0}) 在 ROI 内");
+                        }
+                        else
+                        {
+                            passed = false;
+                            if (filteredPredictions.Count > 0)
+                            {
+                                reason = "等待动作：物体未进入检测区域";
+                                var best = filteredPredictions.OrderByDescending(p => p.Confidence).First();
+                                results["Score"] = best.Confidence;
+                            }
+                            else
+                            {
+                                reason = "等待动作：未检测到目标物";
+                                results["Score"] = 0;
+                            }
+                            results["IsInROI"] = 0;
+                        }
                     }
                     else
                     {
-                        reason = "未识别到目标";
-                        results["Score"] = 0;
+                        // 原有的简单判定逻辑：识别到目标即为通过
+                        passed = predictions.Count > 0;
+                        
+                        if (passed)
+                        {
+                            reason = $"识别成功: {predictions.Count}个目标";
+                            // 取置信度最高的目标作为分数输出
+                            var best = predictions.OrderByDescending(p => p.Confidence).First();
+                            results["Score"] = best.Confidence;
+                            results["ClassId"] = best.ClassId;
+                            results["X"] = best.Rectangle.X;
+                            results["Y"] = best.Rectangle.Y;
+                        }
+                        else
+                        {
+                            reason = "未识别到目标";
+                            results["Score"] = 0;
+                        }
                     }
 
                     // 创建简单的图像记录（不包含图形，图形将在 MainForm 中通过 StaticGraphics 添加）
@@ -1749,6 +1819,39 @@ namespace Audio900.Services
         {
             StatusMessageChanged?.Invoke(this, message);
         }
+
+        /// <summary>
+        /// 判断点是否在旋转矩形 ROI 内
+        /// </summary>
+        private bool IsPointInRotatedROI(float pointX, float pointY, RectangleF roi, double rotationRadians)
+        {
+            // 如果没有旋转，直接使用简单判断
+            if (Math.Abs(rotationRadians) < 0.001)
+            {
+                return roi.Contains(pointX, pointY);
+            }
+
+            // 计算 ROI 中心点
+            double roiCenterX = roi.X + roi.Width / 2.0;
+            double roiCenterY = roi.Y + roi.Height / 2.0;
+
+            // 将点相对于 ROI 中心进行反向旋转，转换到 ROI 的局部坐标系
+            double dx = pointX - roiCenterX;
+            double dy = pointY - roiCenterY;
+
+            // 反向旋转（旋转 -rotationRadians）
+            double cos = Math.Cos(-rotationRadians);
+            double sin = Math.Sin(-rotationRadians);
+
+            double localX = dx * cos - dy * sin;
+            double localY = dx * sin + dy * cos;
+
+            // 在局部坐标系中判断是否在矩形内
+            double halfWidth = roi.Width / 2.0;
+            double halfHeight = roi.Height / 2.0;
+
+            return Math.Abs(localX) <= halfWidth && Math.Abs(localY) <= halfHeight;
+        }
     }
 
     /// <summary>
@@ -1762,6 +1865,10 @@ namespace Audio900.Services
         public bool IsPassed { get; set; }
         public WorkStep Step { get; set; }
         public List<YoloPrediction> Predictions { get; set; }
+        
+        // 过程检测相关
+        public bool IsInROI { get; set; }  // 中心点是否在 ROI 内
+        public PointF? CenterPoint { get; set; }  // 检测物体的中心点
     }
 
     public class ToolBlockDebugEventArgs : EventArgs
