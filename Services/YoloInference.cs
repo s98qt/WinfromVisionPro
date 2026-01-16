@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Linq;
-using System.Runtime.InteropServices;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 
@@ -18,10 +17,9 @@ namespace Audio900.Services
         public float Rotation { get; set; } = 0f; // 旋转角度（弧度），默认为 0（轴对齐）
     }
 
-    public class YoloV8Service : IDisposable
+    public class YoloInference : IDisposable
     {
         private InferenceSession _inferenceSession;
-        private string _modelPath;
         private readonly int _targetSize = 640; 
         private string[] _labels;
 
@@ -37,17 +35,7 @@ namespace Audio900.Services
 
             try
             {
-                _modelPath = modelPath;
-                
                 var options = new SessionOptions();
-                try 
-                {
-
-                }
-                catch
-                {
-                }
-
                 _inferenceSession = new InferenceSession(modelPath, options);
                 _labels = labels;
             }
@@ -57,8 +45,11 @@ namespace Audio900.Services
             }
         }
 
-        public List<YoloPrediction> Predict(Bitmap image, float confidenceThreshold = 0.5f)
+        public float TopConfidence { get; private set; }
+
+        public List<YoloPrediction> Predict(Bitmap image, float confidenceThreshold = 0.3f)
         {
+            TopConfidence = 0f;
             if (_inferenceSession == null) throw new InvalidOperationException("Model not loaded.");
 
             var (tensor, scale, xPadding, yPadding) = Preprocess(image);
@@ -70,7 +61,6 @@ namespace Audio900.Services
             using (var results = _inferenceSession.Run(inputs))
             {
                 var output = results.First().AsTensor<float>();
-                
                 return Postprocess(output, image.Width, image.Height, scale, xPadding, yPadding, confidenceThreshold);
             }
         }
@@ -89,7 +79,8 @@ namespace Audio900.Services
 
             var tensor = new DenseTensor<float>(new[] { 1, 3, _targetSize, _targetSize });
 
-            using (var resized = new Bitmap(_targetSize, _targetSize))
+            // Explicit 24bppRgb to match LockBits
+            using (var resized = new Bitmap(_targetSize, _targetSize, PixelFormat.Format24bppRgb))
             using (var g = Graphics.FromImage(resized))
             {
                 g.Clear(Color.FromArgb(114, 114, 114));
@@ -129,24 +120,52 @@ namespace Audio900.Services
         private List<YoloPrediction> Postprocess(Tensor<float> output, int originalW, int originalH, float scale, float xPad, float yPad, float confThreshold)
         {
             var predictions = new List<YoloPrediction>();
-            int dimensions = output.Dimensions[1];
-            int numAnchors = output.Dimensions[2];
             
-            // 检测是否为 OBB 模型（包含旋转角度）
-            // 标准 YOLO: [cx, cy, w, h, class1, class2, ...]
-            // YOLO-OBB: [cx, cy, w, h, rotation, class1, class2, ...]
-            bool isOBB = dimensions > 5; // 如果维度 > 5，可能是 OBB 模型
-            int numClasses = isOBB ? dimensions - 5 : dimensions - 4;
+            // YOLOv8 output shape is typically [1, 4 + classes, 8400]
+            // But sometimes it can be [1, 8400, 4 + classes] depending on export
+            
+            int dim1 = output.Dimensions[1];
+            int dim2 = output.Dimensions[2];
+            
+            int numClasses = 0;
+            int numAnchors = 0;
+            bool transposed = false;
+
+            // Heuristic: Anchors usually >> Classes. 
+            // 8400 anchors vs 80 classes.
+            if (dim1 > dim2)
+            {
+                // Likely [1, Anchors, Channels]
+                numAnchors = dim1;
+                numClasses = dim2 - 4;
+                transposed = true;
+            }
+            else
+            {
+                // Likely [1, Channels, Anchors]
+                numClasses = dim1 - 4;
+                numAnchors = dim2;
+                transposed = false;
+            }
+
+            // Safety check
+            if (numClasses < 1) return predictions;
+
+            float globalMaxScore = 0f;
 
             for (int i = 0; i < numAnchors; i++)
             {
                 float maxClassScore = 0;
                 int maxClassId = -1;
-                int classStartIdx = isOBB ? 5 : 4;
 
+                // Find best class
                 for (int c = 0; c < numClasses; c++)
                 {
-                    float score = output[0, classStartIdx + c, i];
+                    // If transposed: [0, i, 4+c]
+                    // If not: [0, 4+c, i]
+                    float score = transposed ? output[0, i, 4 + c] : output[0, 4 + c, i];
+                    //float score = Sigmoid(rawScore);  // Apply sigmoid to convert to probability
+                    
                     if (score > maxClassScore)
                     {
                         maxClassScore = score;
@@ -154,13 +173,15 @@ namespace Audio900.Services
                     }
                 }
 
+                if (maxClassScore > globalMaxScore) globalMaxScore = maxClassScore;
+
                 if (maxClassScore < confThreshold) continue;
 
-                float cx = output[0, 0, i];
-                float cy = output[0, 1, i];
-                float w = output[0, 2, i];
-                float h = output[0, 3, i];
-                float rotation = isOBB ? output[0, 4, i] : 0f; // 提取旋转角度（如果存在）
+                // Coordinates
+                float cx = transposed ? output[0, i, 0] : output[0, 0, i];
+                float cy = transposed ? output[0, i, 1] : output[0, 1, i];
+                float w = transposed ? output[0, i, 2] : output[0, 2, i];
+                float h = transposed ? output[0, i, 3] : output[0, 3, i];
 
                 float x = cx - w / 2;
                 float y = cy - h / 2;
@@ -170,20 +191,22 @@ namespace Audio900.Services
                 w = w / scale;
                 h = h / scale;
 
-                x = Math.Max(0, x);
-                y = Math.Max(0, y);
-                w = Math.Min(w, originalW - x);
-                h = Math.Min(h, originalH - y);
-
+                // Clamp
+                // x = Math.Max(0, x);
+                // y = Math.Max(0, y);
+                // w = Math.Min(w, originalW - x);
+                // h = Math.Min(h, originalH - y);
+                
                 predictions.Add(new YoloPrediction
                 {
                     ClassId = maxClassId,
                     Label = _labels != null && maxClassId < _labels.Length ? _labels[maxClassId] : maxClassId.ToString(),
                     Confidence = maxClassScore,
-                    Rectangle = new RectangleF(x, y, w, h),
-                    Rotation = rotation // 保存旋转角度（弧度）
+                    Rectangle = new RectangleF(x, y, w, h)
                 });
             }
+            
+            TopConfidence = globalMaxScore;
 
             return NMS(predictions);
         }
@@ -227,6 +250,11 @@ namespace Audio900.Services
 
             return intersectionArea / (area1 + area2 - intersectionArea);
         }
+
+        //private float Sigmoid(float x)
+        //{
+        //    return 1.0f / (1.0f + (float)Math.Exp(-x));
+        //}
 
         public void Dispose()
         {

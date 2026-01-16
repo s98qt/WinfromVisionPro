@@ -52,7 +52,7 @@ namespace Audio900.Services
         private Dictionary<int, CogToolBlock> _stepToolBlocks = new Dictionary<int, CogToolBlock>();
         
         // Deep Learning 模型全局实例
-        private YoloV8Service _globalYoloService;
+        private YoloOBBInference _globalYoloService;
         private string _loadedGlobalModelPath;
 
         // 相机锁机制，防止同一相机并发访问冲突
@@ -168,10 +168,10 @@ namespace Audio900.Services
 
                                 if (File.Exists(modelPath))
                                 {
-                                    _globalYoloService = new YoloV8Service();
+                                    _globalYoloService = new YoloOBBInference();
                                     _globalYoloService.LoadModel(modelPath, null);
                                     _loadedGlobalModelPath = modelPath;
-                                    _logger.Info($"全局模型已加载: {modelPath}");
+                                    _logger.Info($"全局OBB模型已加载: {modelPath}");
                                 }
                             }
                         }
@@ -419,7 +419,7 @@ namespace Audio900.Services
                                 continue;
                             }
 
-                            (bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloPrediction> Predictions) result;
+                            (bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloOBBPrediction> Predictions) result;
                             var toolBlock = _stepToolBlocks.ContainsKey(step.StepNumber) ? _stepToolBlocks[step.StepNumber] : null;
                             result = await RunHybridLogic(liveImage, step, toolBlock);
                             bool isInROI = result.Results.ContainsKey("IsInROI") && result.Results["IsInROI"] > 0;
@@ -589,7 +589,7 @@ namespace Audio900.Services
                     // 执行视觉检测（包含参数公差比对）
                     _logger.Info($"执行了吗？执行视觉检测（包含参数公差比对）");
                     
-                    (bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloPrediction> Predictions) inspection;
+                    (bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloOBBPrediction> Predictions) inspection;
 
                     if (step.AlgorithmType == 1)
                     {
@@ -1145,13 +1145,13 @@ namespace Audio900.Services
         /// <summary>
         /// 执行深度学习检测逻辑
         /// </summary>
-        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloPrediction> Predictions)> RunDeepLearningLogic(ICogImage image, WorkStep step)
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloOBBPrediction> Predictions)> RunDeepLearningLogic(ICogImage image, WorkStep step)
         {
             var results = new Dictionary<string, double>();
             ICogRecord record = null;
             string reason = "";
             bool passed = false;
-            List<YoloPrediction> predictions = new List<YoloPrediction>();
+            List<YoloOBBPrediction> predictions = new List<YoloOBBPrediction>();
 
             try
             {
@@ -1181,14 +1181,14 @@ namespace Audio900.Services
 
                         // 判断是否有目标的中心点在 ROI 内
                         bool isInROI = false;
-                        YoloPrediction targetInROI = null;
+                        YoloOBBPrediction targetInROI = null;
                         PointF centerPoint = PointF.Empty;
 
                         foreach (var pred in filteredPredictions)
                         {
-                            // 计算中心点
-                            float centerX = pred.Rectangle.X + pred.Rectangle.Width / 2.0f;
-                            float centerY = pred.Rectangle.Y + pred.Rectangle.Height / 2.0f;
+                            // 计算中心点（使用旋转框的4个角点计算中心）
+                            float centerX = pred.RotatedBox.Average(p => p.X);
+                            float centerY = pred.RotatedBox.Average(p => p.Y);
                             
                             // 判断中心点是否在 ROI 内（支持旋转矩形）
                             if (IsPointInRotatedROI(centerX, centerY, step.DetectionROI, step.DetectionROIRotation))
@@ -1240,8 +1240,10 @@ namespace Audio900.Services
                             var best = predictions.OrderByDescending(p => p.Confidence).First();
                             results["Score"] = best.Confidence;
                             results["ClassId"] = best.ClassId;
-                            results["X"] = best.Rectangle.X;
-                            results["Y"] = best.Rectangle.Y;
+                            // 使用旋转框中心点
+                            results["X"] = best.RotatedBox.Average(p => p.X);
+                            results["Y"] = best.RotatedBox.Average(p => p.Y);
+                            results["Angle"] = best.Angle;
                         }
                         else
                         {
@@ -1266,7 +1268,7 @@ namespace Audio900.Services
         /// <summary>
         /// 执行过程检测逻辑：只用YOLOv8进行AR 显示
         /// </summary>
-        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloPrediction> Predictions)> RunHybridLogic(ICogImage image, WorkStep step, CogToolBlock toolBlock)
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloOBBPrediction> Predictions)> RunHybridLogic(ICogImage image, WorkStep step, CogToolBlock toolBlock)
         {
             // 跑深度学习 (YOLO) - 主要是为了获取 AR 效果 (框选物体)
             var yoloResult = await RunDeepLearningLogic(image, step);
@@ -1286,7 +1288,7 @@ namespace Audio900.Services
         /// <summary>
         /// 执行视觉检测：运行工具块并校验参数公差
         /// </summary>
-        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloPrediction> Predictions)> RunVisionInspection(ICogImage image, CogToolBlock cogToolBlock, WorkStep step)
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloOBBPrediction> Predictions)> RunVisionInspection(ICogImage image, CogToolBlock cogToolBlock, WorkStep step)
         {
             
             var results = new Dictionary<string, double>();
@@ -1294,7 +1296,7 @@ namespace Audio900.Services
             
             if (cogToolBlock == null)
             {
-                return (false, "ToolBlock未加载", results, null, new List<YoloPrediction>());
+                return (false, "ToolBlock未加载", results, null, new List<YoloOBBPrediction>());
             }
 
             CogToolBlock toolBlock = cogToolBlock;
@@ -1376,7 +1378,7 @@ namespace Audio900.Services
                                 var reason = $"缺少输出参数: {param.Name}";
                                 _logger.Info(reason);
                                 FireDebug(reason);
-                                return (false, "视觉检测异常", results, record, new List<YoloPrediction>());
+                                return (false, "视觉检测异常", results, record, new List<YoloOBBPrediction>());
                             }
                                 
                             double actualVal = results[param.Name];
@@ -1388,22 +1390,22 @@ namespace Audio900.Services
                                 var reason = $"参数[{param.Name}]超差: 实际{actualVal:F3} 标准{param.StandardValue:F3} 偏差{diff:F3} > 公差{param.Tolerance}";
                                 _logger.Info(reason);
                                 FireDebug(reason);
-                                return (false, "视觉检测异常", results, record, new List<YoloPrediction>());
+                                return (false, "视觉检测异常", results, record, new List<YoloOBBPrediction>());
                             }
                         }
-                        return (true, "参数检测通过", results, record, new List<YoloPrediction>());
+                        return (true, "参数检测通过", results, record, new List<YoloOBBPrediction>());
                     }
                     else
                     {                            
                         // 既无参数也无Score，仅判断工具运行状态
                         if (toolBlock.RunStatus.Result == CogToolResultConstants.Accept)
-                            return (true, "工具运行成功(无参数检查)", results, record, new List<YoloPrediction>());
+                            return (true, "工具运行成功(无参数检查)", results, record, new List<YoloOBBPrediction>());
                         else
                         {
                             var reason = $"工具运行失败: {toolBlock.RunStatus.Message}";
                             _logger.Info(reason);
                             FireDebug(reason);
-                            return (false, "视觉检测异常", results, record, new List<YoloPrediction>());
+                            return (false, "视觉检测异常", results, record, new List<YoloOBBPrediction>());
                         }
                     }
                 }
@@ -1434,7 +1436,7 @@ namespace Audio900.Services
                     {
                     }
                 }
-                return (false, "视觉检测异常", results, null, new List<YoloPrediction>());
+                return (false, "视觉检测异常", results, null, new List<YoloOBBPrediction>());
             }         
         }
 
@@ -1616,7 +1618,7 @@ namespace Audio900.Services
         public Dictionary<string, double> Results { get; set; }
         public bool IsPassed { get; set; }
         public WorkStep Step { get; set; }
-        public List<YoloPrediction> Predictions { get; set; }
+        public List<YoloOBBPrediction> Predictions { get; set; }
         
         // 过程检测相关
         public bool IsInROI { get; set; }  // 中心点是否在 ROI 内
