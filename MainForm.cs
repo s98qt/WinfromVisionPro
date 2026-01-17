@@ -1303,6 +1303,33 @@ namespace Audio900
         }
 
         /// <summary>
+        /// 数据采集工具按钮点击
+        /// </summary>
+        private void btnDataCollection_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                // 检查相机是否连接
+                if (_cameraService == null || !_cameraService.IsConnected)
+                {
+                    MessageBox.Show("相机未连接！\n请先连接相机后再使用数据采集工具。", 
+                        "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // 打开数据采集窗口
+                var dataCollectionWindow = new DataCollectionWindow(_cameraService);
+                dataCollectionWindow.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"打开数据采集工具失败: {ex.Message}", 
+                    "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                LoggerService.Error(ex, "异常：打开数据采集工具失败");
+            }
+        }
+
+        /// <summary>
         /// 模板管理按钮点击
         /// </summary>
         private void btnTemplateManage_Click(object sender, EventArgs e)

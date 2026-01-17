@@ -1060,6 +1060,30 @@ namespace Audio900.Services
                 return null;
             }
         }
+
+        /// <summary>
+        /// 获取最新的相机帧作为Bitmap（用于简单的图片显示，不需要VisionPro控件）
+        /// </summary>
+        public Bitmap GetLatestFrameAsBitmap()
+        {
+            try
+            {
+                lock (_frameLock)
+                {
+                    if (_latestFrame != null)
+                    {
+                        // 将ICogImage转换为Bitmap
+                        return _latestFrame.ToBitmap();
+                    }
+                }
+                return null;
+            }
+            catch (Exception ex)
+            {
+                LoggerService.Error(ex, "获取最新帧为Bitmap失败");
+                return null;
+            }
+        }
         #endregion
 
         #region 资源释放

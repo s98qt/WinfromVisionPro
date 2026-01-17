@@ -218,6 +218,10 @@
     <Compile Include="Views\CreateTemplateWindow.Designer.cs">
       <DependentUpon>CreateTemplateWindow.cs</DependentUpon>
     </Compile>
+    <Compile Include="Views\DataCollectionWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\DataCollectionWindow.Designer.cs" />
     <Compile Include="Views\SetROIWindow.cs">
       <SubType>Form</SubType>
     </Compile>
