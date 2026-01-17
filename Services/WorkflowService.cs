@@ -440,20 +440,20 @@ namespace Audio900.Services
                                 IsInROI = isInROI,
                                 CenterPoint = centerPoint
                             });
-                            
-                            //if (result.Passed)
-                            //{
-                            //    if (!passTimer.IsRunning)
-                            //    {
-                            //        passTimer.Start();                                
-                            //    }
 
-                            //    step.Status = "检测通过";
-                            //    UpdateStepStatus(step, "检测通过");
+                            if (result.Passed)
+                            {
+                                if (!passTimer.IsRunning)
+                                {
+                                    passTimer.Start();
+                                }
 
-                            //    OnStepCompleted?.Invoke(step);
-                            //    break;                              
-                            //}
+                                step.Status = "检测通过";
+                                UpdateStepStatus(step, "检测通过");
+
+                                OnStepCompleted?.Invoke(step);
+                                break;
+                            }
                         }
 
                         catch (Exception ex)
@@ -1152,7 +1152,8 @@ namespace Audio900.Services
             string reason = "";
             bool passed = false;
             List<YoloOBBPrediction> predictions = new List<YoloOBBPrediction>();
-
+            int stepClassID = step.StepNumber - 1; // 步骤顺序和识别序号一一对应
+            int predictClassID = -1;
             try
             {
                 // 使用全局模型
@@ -1186,6 +1187,7 @@ namespace Audio900.Services
 
                         foreach (var pred in filteredPredictions)
                         {
+                            predictClassID = pred.ClassId;
                             // 计算中心点（使用旋转框的4个角点计算中心）
                             float centerX = pred.RotatedBox.Average(p => p.X);
                             float centerY = pred.RotatedBox.Average(p => p.Y);
@@ -1200,8 +1202,8 @@ namespace Audio900.Services
                             }
                         }
 
-                        // 简化判定：中心点在 ROI 内即通过
-                        if (isInROI)
+                        // 判定条件：中心点在 ROI 内并且当前步骤顺序和识别的顺序是一一对应
+                        if (isInROI && stepClassID == predictClassID)
                         {
                             passed = true;
                             reason = $"动作完成：{targetInROI.Label} 进入检测区域";
