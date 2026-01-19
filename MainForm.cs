@@ -30,6 +30,7 @@ namespace Audio900
         private TemplateStorageService _templateStorageService;
         private VideoRecordingService _videoRecordingService;
         private WorkflowService _workflowService;
+        private CalibrationService _calibrationService;
 
         private const int _fallbackCameraCountWhenDetectFailsDefault = 2;
         private EventHandler<ICogImage> _singleCameraImageCapturedHandler;
@@ -59,6 +60,8 @@ namespace Audio900
             _templateStorageService = new TemplateStorageService();
             _videoRecordingService = new VideoRecordingService();
             _cameraService = new CameraService();
+            _calibrationService = new CalibrationService();
+            _calibrationService.LoadAllCalibrations();
 
             chkDebugMode.CheckedChanged += (s, e) =>
             {
@@ -754,7 +757,7 @@ namespace Audio900
         /// </summary>
         private void InitializeWorkflow()
         {
-            _workflowService = new WorkflowService(_cameraService);
+            _workflowService = new WorkflowService(_cameraService, _calibrationService);
             _workflowService.StatusMessageChanged += OnWorkflowStatusMessageChanged;
             _workflowService.StateChanged += OnWorkflowStateChanged;
             _workflowService.OverallResultChanged += OnWorkflowOverallResultChanged;
@@ -1326,6 +1329,47 @@ namespace Audio900
                 MessageBox.Show($"打开数据采集工具失败: {ex.Message}", 
                     "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 LoggerService.Error(ex, "异常：打开数据采集工具失败");
+            }
+        }
+
+        /// <summary>
+        /// 相机标定按钮点击
+        /// </summary>
+        private void btnCalibration_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                // 检查相机是否连接
+                if (_cameraService == null || !_cameraService.IsConnected)
+                {
+                    MessageBox.Show("相机未连接！\n请先连接相机后再进行标定。", 
+                        "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // 选择要标定的相机（目前默认相机0，后续可扩展为选择对话框）
+                int cameraIndex = 0;
+
+                // 打开标定助手窗口
+                var calibWindow = new CalibrationAssistantWindow(_cameraService, cameraIndex);
+                if (calibWindow.ShowDialog() == DialogResult.OK)
+                {
+                    // 重新加载标定
+                    _calibrationService.LoadAllCalibrations();
+                    
+                    // 显示标定信息
+                    string summary = _calibrationService.GetCalibrationSummary(cameraIndex);
+                    MessageBox.Show($"标定已更新！\n\n{summary}", 
+                        "标定成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    
+                    LoggerService.Info($"相机{cameraIndex}标定已更新");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"打开标定助手失败: {ex.Message}", 
+                    "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                LoggerService.Error(ex, "异常：打开标定助手失败");
             }
         }
 

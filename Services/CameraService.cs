@@ -1001,6 +1001,17 @@ namespace Audio900.Services
                 {
                     return new CogImage24PlanarColor(bitmap);
                 }
+
+                //方式二：使用 CogImageConvert(如果一定要用工具类)
+                // 注意：返回值是 ICogImage，需要强转
+                //ICogImage cogImage2 = Cognex.VisionPro.CogImageConvert.GetRGBImageFromBitmap(yourBitmap);
+
+                //using (Bitmap bitmap = new Bitmap(width, height, stride, PixelFormat.Format24bppRgb, ptr))
+                //{
+                //    使用 CreatePartiallyDefaultImgFromBitmap
+                //     或者 GetRGB8PlanarFromBitmap(取决于具体需求)
+                //    return CogImageConvert.get  GetRGB8PlanarFromBitmap(bitmap);
+                //}
             }
             catch (Exception ex)
             {
@@ -1057,6 +1068,25 @@ namespace Audio900.Services
                 GC.Collect();
                 GC.WaitForPendingFinalizers();
                 LoggerService.Error(ex, $"图像复制失败: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 获取最新的相机帧（返回ICogImage，用于VisionPro控件）
+        /// </summary>
+        public ICogImage GetLatestFrame()
+        {
+            try
+            {
+                lock (_frameLock)
+                {
+                    return _latestFrame;
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerService.Error(ex, "获取最新帧失败");
                 return null;
             }
         }

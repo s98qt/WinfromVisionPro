@@ -42,6 +42,7 @@ namespace Audio900.Services
 
         private WorkflowState _currentState;
         private CameraService _cameraService;
+        private CalibrationService _calibrationService;
         private WorkTemplate _currentTemplate;
         private VideoRecordingService _videoRecordingService;
 
@@ -87,9 +88,10 @@ namespace Audio900.Services
 
         public bool EnableDebugPopup { get; set; }
 
-        public WorkflowService(CameraService cameraService)
+        public WorkflowService(CameraService cameraService, CalibrationService calibrationService = null)
         {
             _cameraService = cameraService;
+            _calibrationService = calibrationService;
             _currentState = WorkflowState.Idle;
 
             // 初始化视频录制服务
@@ -417,6 +419,12 @@ namespace Audio900.Services
                             {
                                 await Task.Delay(100); // 失败时等待
                                 continue;
+                            }
+
+                            // 2. 应用标定（如果已标定）
+                            if (_calibrationService != null && _calibrationService.IsCalibrated(step.CameraIndex))
+                            {
+                                liveImage = _calibrationService.ApplyCalibration(liveImage, step.CameraIndex);
                             }
 
                             (bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloOBBPrediction> Predictions) result;
@@ -813,6 +821,11 @@ namespace Audio900.Services
 
                     if (image != null)
                     {
+                        // 应用标定（如果已标定）
+                        if (_calibrationService != null && _calibrationService.IsCalibrated(cameraIndex))
+                        {
+                            image = _calibrationService.ApplyCalibration(image, cameraIndex);
+                        }
                         return image;
                     }
                 }
