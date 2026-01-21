@@ -277,7 +277,7 @@ namespace Audio900.Services
             return result;
         }
 
-        // 计算轴对齐矩形IoU（参考YOLO项目的计算交并比方法）
+        // 计算轴对齐矩形IoU
         private float CalculateAxisAlignedIoU(
             (float x, float y, float w, float h, float conf, int classId, float angle) box1,
             (float x, float y, float w, float h, float conf, int classId, float angle) box2)
