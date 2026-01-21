@@ -63,7 +63,6 @@ namespace Audio900.Services
 
         /// <summary>
         /// 将 YOLO 预测结果直接应用到 CogRecordDisplay 的 StaticGraphics，用于过程检测的 AR 实时显示
-        /// 包含：ROI 框显示、检测框颜色判断（绿色=在 ROI 内，黄色=在 ROI 外）、中心点标记
         /// </summary>
         /// <param name="display">显示控件</param>
         /// <param name="image">图像</param>

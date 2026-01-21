@@ -16,8 +16,8 @@ namespace Audio900.Services
         public int ClassId { get; set; }
         public string Label { get; set; }
         public float Confidence { get; set; }
-        public PointF[] RotatedBox { get; set; } // 4 corner points
-        public float Angle { get; set; } // Rotation angle in degrees
+        public PointF[] RotatedBox { get; set; } 
+        public float Angle { get; set; }
     }
 
     public class YoloOBBInference : IDisposable
@@ -62,7 +62,7 @@ namespace Audio900.Services
             // 转换Bitmap到OpenCvSharp Mat
             Mat mat = BitmapToMat(image);
 
-            // 1. 简单缩放预处理（参考YOLO成功项目）
+            // 1. 简单缩放预处理
             Mat inputMat = ResizeImage(mat, _targetSize, out float ratio, out int padLeft, out int padTop);
 
             LoggerService.Info($"[OBB推理] 缩放比例: {ratio}, 输入尺寸: {inputMat.Width}x{inputMat.Height}, Padding: left={padLeft}, top={padTop}");
@@ -80,7 +80,7 @@ namespace Audio900.Services
             using (var results = _inferenceSession.Run(inputs))
             {
                 var output = results.First().AsTensor<float>();
-                // 4. 后处理（参考YOLO成功项目的方法）
+                // 4. 后处理
                 predictions = PostprocessSimple(output, image.Width, image.Height, ratio, padLeft, padTop, confThreshold, iouThreshold);
             }
 
@@ -97,7 +97,7 @@ namespace Audio900.Services
             return OpenCvSharp.Extensions.BitmapConverter.ToMat(bitmap);
         }
 
-        // 简单缩放预处理（参考YOLO成功项目）
+        // 简单缩放预处理
         private Mat ResizeImage(Mat img, int targetSize, out float ratio, out int padLeft, out int padTop)
         {
             var shape = img.Size();
@@ -159,20 +159,19 @@ namespace Audio900.Services
             return tensor;
         }
 
-        // 简化后处理（参考YOLO成功项目）
+        // 简化后处理
         private List<YoloOBBPrediction> PostprocessSimple(Tensor<float> output, int originalW, int originalH, float ratio, int padLeft, int padTop, float confThreshold, float iouThreshold)
         {
             var results = new List<YoloOBBPrediction>();
 
             // YOLOv8-OBB输出: [1, num_channels, 8400]
-            // 关键发现：角度在最后一个channel！
             int dimensions = output.Dimensions[1];
             int rows = output.Dimensions[2]; // 8400 anchors
             int numClasses = dimensions - 5; // 前4个是xywh，最后1个是angle，中间是类别
 
             LoggerService.Info($"[OBB简化后处理] 输出形状: [{output.Dimensions[0]}, {dimensions}, {rows}], 类别数: {numClasses}");
 
-            // 第一步：置信度过滤（参考YOLO项目的置信度过滤_obb方法）
+            // 第一步：置信度过滤
             var filteredData = new List<(float x, float y, float w, float h, float conf, int classId, float angle)>();
 
             for (int i = 0; i < rows; i++)
@@ -183,7 +182,7 @@ namespace Audio900.Services
 
                 for (int c = 0; c < numClasses; c++)
                 {
-                    float score = output[0, 4 + c, i]; // 不使用Sigmoid！
+                    float score = output[0, 4 + c, i]; 
 
                     if (score > maxScore)
                     {
@@ -211,7 +210,7 @@ namespace Audio900.Services
                 return results;
             }
 
-            // 第二步：NMS（使用轴对齐IoU，参考YOLO项目）
+            // 第二步：NMS，使用轴对齐IoU
             var nmsResults = NMSSimple(filteredData, iouThreshold);
 
             LoggerService.Info($"[OBB简化后处理] NMS后: {nmsResults.Count}");
@@ -250,7 +249,7 @@ namespace Audio900.Services
             return results;
         }
 
-        // 简化NMS（使用轴对齐IoU，参考YOLO项目）
+        // 简化NMS，使用轴对齐IoU
         private List<(float x, float y, float w, float h, float conf, int classId, float angle)> NMSSimple(
             List<(float x, float y, float w, float h, float conf, int classId, float angle)> data, float iouThreshold)
         {
@@ -316,7 +315,7 @@ namespace Audio900.Services
             return intersectionArea / unionArea;
         }
 
-        // 计算旋转矩形的4个角点（参考YOLO项目的OBB坐标转换方法）
+        // 计算旋转矩形的4个角点
         private PointF[] CalculateRotatedCorners(float cx, float cy, float w, float h, float angle)
         {
             float cos_value = (float)Math.Cos(angle);

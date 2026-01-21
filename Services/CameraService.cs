@@ -350,13 +350,13 @@ namespace Audio900.Services
                 _parentControl = parentControl;
 
                 // 优先尝试初始化1960型号相机
-                //bool init1960Success = TryInitialize1960Camera();
-                //if (init1960Success)
-                //{
-                //    _cameraType = CameraType.Oumit1960;
-                //    _isInitialized = true;
-                //    return true;
-                //}
+                bool init1960Success = TryInitialize1960Camera();
+                if (init1960Success)
+                {
+                    _cameraType = CameraType.Oumit1960;
+                    _isInitialized = true;
+                    return true;
+                }
 
                 // 1960初始化失败,尝试1000型号
                 bool init1000Success = TryInitialize1000Camera();
@@ -396,6 +396,10 @@ namespace Audio900.Services
                     CapInfoStruct capInfo = _camera1960.GetCapInfo();
                     _width = (int)capInfo.Width;
                     _height = (int)capInfo.Height;
+                    // 禁用自动白平衡
+                    _camera1960.SetParam(ENUM_Param.idAWBing, 0, 0);
+                    // 启用自动白平衡
+                    //_camera1960.SetParam(ENUM_Param.idAWBing, 1, 0);
                     return true;
                 }
 
@@ -435,8 +439,11 @@ namespace Audio900.Services
                     // 设置增益
                     iCam.SetGain(_camHandle, 1);
 
-                    // 开启自动白平衡
-                    iCam.AutoWhiteBalance(_camHandle, 0, 0, 0, 0);
+                    // 方式 1：禁用自动白平衡
+                    // iCam.AutoWhiteBalance(_camHandle, 0, 0, 0, 0);  // 注释掉
+
+                    // 方式 2：手动设置白平衡参数
+                    //iCam.SetWhiteBalanceParams(_camHandle, 1.0, 1.0);  // R 和 B 增益设为 1.0
                     return true;
                 }
 
@@ -1002,14 +1009,12 @@ namespace Audio900.Services
                     return new CogImage24PlanarColor(bitmap);
                 }
 
-                //方式二：使用 CogImageConvert(如果一定要用工具类)
-                // 注意：返回值是 ICogImage，需要强转
                 //ICogImage cogImage2 = Cognex.VisionPro.CogImageConvert.GetRGBImageFromBitmap(yourBitmap);
 
                 //using (Bitmap bitmap = new Bitmap(width, height, stride, PixelFormat.Format24bppRgb, ptr))
                 //{
                 //    使用 CreatePartiallyDefaultImgFromBitmap
-                //     或者 GetRGB8PlanarFromBitmap(取决于具体需求)
+                //     或者 GetRGB8PlanarFromBitmap
                 //    return CogImageConvert.get  GetRGB8PlanarFromBitmap(bitmap);
                 //}
             }
@@ -1064,7 +1069,6 @@ namespace Audio900.Services
             }
             catch (Exception ex)
             {
-                // 紧急内存回收
                 GC.Collect();
                 GC.WaitForPendingFinalizers();
                 LoggerService.Error(ex, $"图像复制失败: {ex.Message}");

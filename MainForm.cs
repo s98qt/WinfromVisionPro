@@ -938,22 +938,19 @@ namespace Audio900
             }
         }
 
-        // 【全局变量区域】定义字体，避免重复创建导致的内存泄漏
+        // 全局变量区域定义字体，避免重复创建导致的内存泄漏
         private readonly Font _bigFont = new Font("Microsoft Sans Serif", 48, FontStyle.Bold);
         private readonly Font _midFont = new Font("Microsoft Sans Serif", 32, FontStyle.Bold);
 
         // 用于Yolo进行过程检测的显示
         private void OnYoloDetection(object sender, InspectionResultEventArgs e)
         {
-            // 1. 基础校验
             if (e?.Step == null) return;
             int cameraIndex = e.Step.CameraIndex;
             if (cameraIndex < 0 || cameraIndex >= _cogDisplays.Count) return;
 
-            // 2. 喂狗 (保持 AR 独占)
             if (cameraIndex < _lastArUpdateTime.Length)
                 _lastArUpdateTime[cameraIndex] = DateTime.Now;
-            // 3. UI 更新
             this.BeginInvoke(new Action(() =>
             {
                 try
