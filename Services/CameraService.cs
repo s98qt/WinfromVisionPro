@@ -243,8 +243,8 @@ namespace Audio900.Services
             //{
             //    throw new InvalidOperationException("当前不是多相机模式");
             //}
-            return _cameras[0];
-            //return index >= 0 && index < _cameras.Count ? _cameras[index] : null;
+            //return _cameras[0];
+            return index >= 0 && index < _cameras.Count ? _cameras[index] : null;
         }
 
         /// <summary>
@@ -350,13 +350,13 @@ namespace Audio900.Services
                 _parentControl = parentControl;
 
                 // 优先尝试初始化1960型号相机
-                //bool init1960Success = TryInitialize1960Camera();
-                //if (init1960Success)
-                //{
-                //    _cameraType = CameraType.Oumit1960;
-                //    _isInitialized = true;
-                //    return true;
-                //}
+                bool init1960Success = TryInitialize1960Camera();
+                if (init1960Success)
+                {
+                    _cameraType = CameraType.Oumit1960;
+                    _isInitialized = true;
+                    return true;
+                }
 
                 // 1960初始化失败,尝试1000型号
                 bool init1000Success = TryInitialize1000Camera();
@@ -396,6 +396,10 @@ namespace Audio900.Services
                     CapInfoStruct capInfo = _camera1960.GetCapInfo();
                     _width = (int)capInfo.Width;
                     _height = (int)capInfo.Height;
+                    // 禁用自动白平衡
+                    _camera1960.SetParam(ENUM_Param.idAWBing, 0, 0);
+                    // 启用自动白平衡
+                    //_camera1960.SetParam(ENUM_Param.idAWBing, 1, 0);
                     return true;
                 }
 
@@ -435,8 +439,11 @@ namespace Audio900.Services
                     // 设置增益
                     iCam.SetGain(_camHandle, 1);
 
-                    // 开启自动白平衡
-                    iCam.AutoWhiteBalance(_camHandle, 0, 0, 0, 0);
+                    // 方式 1：禁用自动白平衡
+                    // iCam.AutoWhiteBalance(_camHandle, 0, 0, 0, 0);  // 注释掉
+
+                    // 方式 2：手动设置白平衡参数
+                    //iCam.SetWhiteBalanceParams(_camHandle, 1.0, 1.0);  // R 和 B 增益设为 1.0
                     return true;
                 }
 
