@@ -87,7 +87,7 @@ namespace Audio900.Services
                 if (_isMultiCameraMode)
                 {
                     // 多相机模式：至少有一个相机连接
-                    return _cameras.Any(c => c.IsConnected);
+                    return _cameras != null && _cameras.Any(c => c.IsConnected);
                 }
                 else
                 {
@@ -201,6 +201,13 @@ namespace Audio900.Services
                     if (success)
                     {
                         _cameras.Add(camera);
+
+                        // 保存第一个成功初始化的相机类型到主实例
+                        if (i == 0)
+                        {
+                            _cameraType = camera._cameraType;
+                            _isInitialized = true;
+                        }
 
                         int cameraIndex = i;
                         camera.ImageCaptured += (s, image) =>

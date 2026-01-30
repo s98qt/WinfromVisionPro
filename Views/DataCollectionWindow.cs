@@ -13,6 +13,7 @@ namespace Audio900.Views
     public partial class DataCollectionWindow : Form
     {
         private CameraService _cameraService;
+        private int _selectedCameraIndex = 0;
         private int _collectedCount = 0;
         private int _targetCount = 100;
         private string _savePath;
@@ -51,12 +52,50 @@ namespace Audio900.Views
             // 生成默认保存路径
             txtSavePath.Text = Path.Combine(@"D:\TrainingData", DateTime.Now.ToString("yyyyMMdd_HHmmss"));
             
+            // 初始化相机选择下拉框
+            InitializeCameraSelection();
+            
             // 初始状态
             UpdateProgress();
             UpdateButtonStates(false);
             
             // 默认选择手动模式
             rbManualMode.Checked = true;
+        }
+
+        private void InitializeCameraSelection()
+        {
+            cmbCameraSelect.Items.Clear();
+            
+            if (_cameraService != null)
+            {
+                if (_cameraService.IsMultiCameraMode)
+                {
+                    // 多相机模式：显示所有相机
+                    int cameraCount = _cameraService.ConnectedCameraCount;
+                    for (int i = 0; i < cameraCount; i++)
+                    {
+                        cmbCameraSelect.Items.Add($"相机 {i + 1}");
+                    }
+                    cmbCameraSelect.Enabled = true;
+                }
+                else
+                {
+                    // 单相机模式：只有一个选项
+                    cmbCameraSelect.Items.Add("相机 1 (单相机模式)");
+                    cmbCameraSelect.Enabled = false;
+                }
+            }
+            else
+            {
+                cmbCameraSelect.Items.Add("未连接相机");
+                cmbCameraSelect.Enabled = false;
+            }
+            
+            if (cmbCameraSelect.Items.Count > 0)
+            {
+                cmbCameraSelect.SelectedIndex = 0;
+            }
         }
 
         private void DataCollectionWindow_KeyDown(object sender, KeyEventArgs e)
@@ -73,13 +112,29 @@ namespace Audio900.Views
         {
             try
             {
-                // 获取实时相机画面（直接获取Bitmap，不需要VisionPro控件）
+                // 获取实时相机画面
                 if (_cameraService != null && _cameraService.IsConnected)
                 {
-                    var liveBitmap = _cameraService.GetLatestFrameAsBitmap();
+                    Bitmap liveBitmap = null;
+                    
+                    if (_cameraService.IsMultiCameraMode)
+                    {
+                        // 多相机模式：从选定的相机获取图像
+                        var camera = _cameraService.GetCamera(_selectedCameraIndex);
+                        if (camera != null && camera.IsConnected)
+                        {
+                            liveBitmap = camera.GetLatestFrameAsBitmap();
+                        }
+                    }
+                    else
+                    {
+                        // 单相机模式
+                        liveBitmap = _cameraService.GetLatestFrameAsBitmap();
+                    }
+                    
                     if (liveBitmap != null)
                     {
-                        // 更新预览图（需要克隆，避免GDI+错误）
+                        // 更新预览图
                         if (pictureBoxPreview.Image != null)
                         {
                             pictureBoxPreview.Image.Dispose();
@@ -196,12 +251,30 @@ namespace Audio900.Views
                 }
 
                 // 从相机采集图像
-                var image = _cameraService.CaptureSnapshotAsync();
+                ICogImage image = null;
+                
+                if (_cameraService.IsMultiCameraMode)
+                {
+                    // 多相机模式：从选定的相机采集
+                    var camera = _cameraService.GetCamera(_selectedCameraIndex);
+                    if (camera != null && camera.IsConnected)
+                    {
+                        image = camera.CaptureSnapshotAsync();
+                    }
+                }
+                else
+                {
+                    // 单相机模式
+                    image = _cameraService.CaptureSnapshotAsync();
+                }
+                
                 if (image != null)
                 {
-                    // 生成文件名
+                    // 生成文件名（包含相机索引）
                     _collectedCount++;
-                    string filename = $"img_{_collectedCount:D4}.bmp";
+                    string filename = _cameraService.IsMultiCameraMode 
+                        ? $"cam{_selectedCameraIndex}_img_{_collectedCount:D4}.bmp"
+                        : $"img_{_collectedCount:D4}.bmp";
                     string fullPath = Path.Combine(_savePath, filename);
 
                     // 保存图片
@@ -262,6 +335,7 @@ namespace Audio900.Views
             numAutoInterval.Enabled = !isCollecting;
             txtSavePath.Enabled = !isCollecting;
             btnBrowse.Enabled = !isCollecting;
+            cmbCameraSelect.Enabled = !isCollecting && (_cameraService != null && _cameraService.IsMultiCameraMode);
         }
 
         private void btnBrowse_Click(object sender, EventArgs e)
@@ -296,6 +370,12 @@ namespace Audio900.Views
         {
             numAutoInterval.Enabled = rbAutoMode.Checked;
             lblAutoIntervalHint.Enabled = rbAutoMode.Checked;
+        }
+
+        private void cmbCameraSelect_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            _selectedCameraIndex = cmbCameraSelect.SelectedIndex;
+            LoggerService.Info($"切换到相机 {_selectedCameraIndex}");
         }
 
         protected override void Dispose(bool disposing)

@@ -39,6 +39,8 @@ namespace Audio900.Views
             this.btnManualCapture = new System.Windows.Forms.Button();
             this.btnOpenFolder = new System.Windows.Forms.Button();
             this.lblStatus = new System.Windows.Forms.Label();
+            this.labelCamera = new System.Windows.Forms.Label();
+            this.cmbCameraSelect = new System.Windows.Forms.ComboBox();
             this.groupBoxSettings.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.numTargetCount)).BeginInit();
             this.groupBoxMode.SuspendLayout();
@@ -49,6 +51,8 @@ namespace Audio900.Views
             // 
             // groupBoxSettings
             // 
+            this.groupBoxSettings.Controls.Add(this.cmbCameraSelect);
+            this.groupBoxSettings.Controls.Add(this.labelCamera);
             this.groupBoxSettings.Controls.Add(this.btnBrowse);
             this.groupBoxSettings.Controls.Add(this.txtSavePath);
             this.groupBoxSettings.Controls.Add(this.label1);
@@ -56,7 +60,7 @@ namespace Audio900.Views
             this.groupBoxSettings.Controls.Add(this.label2);
             this.groupBoxSettings.Location = new System.Drawing.Point(12, 12);
             this.groupBoxSettings.Name = "groupBoxSettings";
-            this.groupBoxSettings.Size = new System.Drawing.Size(760, 90);
+            this.groupBoxSettings.Size = new System.Drawing.Size(760, 120);
             this.groupBoxSettings.TabIndex = 0;
             this.groupBoxSettings.TabStop = false;
             this.groupBoxSettings.Text = "采集设置";
@@ -118,6 +122,25 @@ namespace Audio900.Views
             this.label2.TabIndex = 0;
             this.label2.Text = "目标数量:";
             // 
+            // labelCamera
+            // 
+            this.labelCamera.AutoSize = true;
+            this.labelCamera.Location = new System.Drawing.Point(20, 90);
+            this.labelCamera.Name = "labelCamera";
+            this.labelCamera.Size = new System.Drawing.Size(65, 12);
+            this.labelCamera.TabIndex = 5;
+            this.labelCamera.Text = "选择相机:";
+            // 
+            // cmbCameraSelect
+            // 
+            this.cmbCameraSelect.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.cmbCameraSelect.FormattingEnabled = true;
+            this.cmbCameraSelect.Location = new System.Drawing.Point(90, 87);
+            this.cmbCameraSelect.Name = "cmbCameraSelect";
+            this.cmbCameraSelect.Size = new System.Drawing.Size(200, 20);
+            this.cmbCameraSelect.TabIndex = 6;
+            this.cmbCameraSelect.SelectedIndexChanged += new System.EventHandler(this.cmbCameraSelect_SelectedIndexChanged);
+            // 
             // groupBoxMode
             // 
             this.groupBoxMode.Controls.Add(this.lblAutoIntervalHint);
@@ -125,7 +148,7 @@ namespace Audio900.Views
             this.groupBoxMode.Controls.Add(this.label3);
             this.groupBoxMode.Controls.Add(this.rbAutoMode);
             this.groupBoxMode.Controls.Add(this.rbManualMode);
-            this.groupBoxMode.Location = new System.Drawing.Point(12, 108);
+            this.groupBoxMode.Location = new System.Drawing.Point(12, 138);
             this.groupBoxMode.Name = "groupBoxMode";
             this.groupBoxMode.Size = new System.Drawing.Size(760, 80);
             this.groupBoxMode.TabIndex = 1;
@@ -207,7 +230,7 @@ namespace Audio900.Views
             // 
             this.pictureBoxPreview.BackColor = System.Drawing.Color.Black;
             this.pictureBoxPreview.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            this.pictureBoxPreview.Location = new System.Drawing.Point(12, 194);
+            this.pictureBoxPreview.Location = new System.Drawing.Point(12, 224);
             this.pictureBoxPreview.Name = "pictureBoxPreview";
             this.pictureBoxPreview.Size = new System.Drawing.Size(760, 400);
             this.pictureBoxPreview.SizeMode = System.Windows.Forms.PictureBoxSizeMode.Zoom;
@@ -219,7 +242,7 @@ namespace Audio900.Views
             this.groupBoxProgress.Controls.Add(this.lblLastImage);
             this.groupBoxProgress.Controls.Add(this.lblProgress);
             this.groupBoxProgress.Controls.Add(this.progressBar);
-            this.groupBoxProgress.Location = new System.Drawing.Point(12, 600);
+            this.groupBoxProgress.Location = new System.Drawing.Point(12, 630);
             this.groupBoxProgress.Name = "groupBoxProgress";
             this.groupBoxProgress.Size = new System.Drawing.Size(760, 80);
             this.groupBoxProgress.TabIndex = 3;
@@ -258,7 +281,7 @@ namespace Audio900.Views
             this.btnStartCollect.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(0)))), ((int)(((byte)(192)))), ((int)(((byte)(0)))));
             this.btnStartCollect.Font = new System.Drawing.Font("微软雅黑", 10F, System.Drawing.FontStyle.Bold);
             this.btnStartCollect.ForeColor = System.Drawing.Color.White;
-            this.btnStartCollect.Location = new System.Drawing.Point(12, 690);
+            this.btnStartCollect.Location = new System.Drawing.Point(12, 720);
             this.btnStartCollect.Name = "btnStartCollect";
             this.btnStartCollect.Size = new System.Drawing.Size(180, 40);
             this.btnStartCollect.TabIndex = 4;
@@ -272,7 +295,7 @@ namespace Audio900.Views
             this.btnStopCollect.Enabled = false;
             this.btnStopCollect.Font = new System.Drawing.Font("微软雅黑", 10F, System.Drawing.FontStyle.Bold);
             this.btnStopCollect.ForeColor = System.Drawing.Color.White;
-            this.btnStopCollect.Location = new System.Drawing.Point(198, 690);
+            this.btnStopCollect.Location = new System.Drawing.Point(198, 720);
             this.btnStopCollect.Name = "btnStopCollect";
             this.btnStopCollect.Size = new System.Drawing.Size(180, 40);
             this.btnStopCollect.TabIndex = 5;
@@ -286,7 +309,7 @@ namespace Audio900.Views
             this.btnManualCapture.Enabled = false;
             this.btnManualCapture.Font = new System.Drawing.Font("微软雅黑", 10F, System.Drawing.FontStyle.Bold);
             this.btnManualCapture.ForeColor = System.Drawing.Color.White;
-            this.btnManualCapture.Location = new System.Drawing.Point(384, 690);
+            this.btnManualCapture.Location = new System.Drawing.Point(384, 720);
             this.btnManualCapture.Name = "btnManualCapture";
             this.btnManualCapture.Size = new System.Drawing.Size(180, 40);
             this.btnManualCapture.TabIndex = 6;
@@ -297,7 +320,7 @@ namespace Audio900.Views
             // btnOpenFolder
             // 
             this.btnOpenFolder.Font = new System.Drawing.Font("微软雅黑", 9F);
-            this.btnOpenFolder.Location = new System.Drawing.Point(592, 690);
+            this.btnOpenFolder.Location = new System.Drawing.Point(592, 720);
             this.btnOpenFolder.Name = "btnOpenFolder";
             this.btnOpenFolder.Size = new System.Drawing.Size(180, 40);
             this.btnOpenFolder.TabIndex = 7;
@@ -310,7 +333,7 @@ namespace Audio900.Views
             this.lblStatus.AutoSize = true;
             this.lblStatus.Font = new System.Drawing.Font("微软雅黑", 9F);
             this.lblStatus.ForeColor = System.Drawing.SystemColors.GrayText;
-            this.lblStatus.Location = new System.Drawing.Point(12, 740);
+            this.lblStatus.Location = new System.Drawing.Point(12, 770);
             this.lblStatus.Name = "lblStatus";
             this.lblStatus.Size = new System.Drawing.Size(176, 17);
             this.lblStatus.TabIndex = 8;
@@ -320,7 +343,7 @@ namespace Audio900.Views
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 12F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(784, 761);
+            this.ClientSize = new System.Drawing.Size(784, 800);
             this.Controls.Add(this.lblStatus);
             this.Controls.Add(this.btnOpenFolder);
             this.Controls.Add(this.btnManualCapture);
@@ -373,5 +396,7 @@ namespace Audio900.Views
         private System.Windows.Forms.Button btnManualCapture;
         private System.Windows.Forms.Button btnOpenFolder;
         private System.Windows.Forms.Label lblStatus;
+        private System.Windows.Forms.Label labelCamera;
+        private System.Windows.Forms.ComboBox cmbCameraSelect;
     }
 }
