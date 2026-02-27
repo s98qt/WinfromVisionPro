@@ -381,8 +381,8 @@ namespace Audio900.Services
 
             try
             {
-                //var camera = _cameraService.GetCamera(step.CameraIndex); // 双相机模式
-                var camera = _cameraService; // 单相机模式
+                var camera = _cameraService.GetCamera(step.CameraIndex); // 双相机模式
+                //var camera = _cameraService; // 单相机模式
                 if (camera == null)
                 {
                     _logger.Error($"步骤{step.StepNumber}: 无法获取相机索引 {step.CameraIndex}");
