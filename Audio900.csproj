@@ -265,6 +265,12 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\CalibrationAssistantWindow.Designer.cs" />
+    <Compile Include="Views\CameraDisplayForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\CameraDisplayForm.Designer.cs">
+      <DependentUpon>CameraDisplayForm.cs</DependentUpon>
+    </Compile>
     <Compile Include="Views\CreateTemplateWindow.cs">
       <SubType>Form</SubType>
     </Compile>

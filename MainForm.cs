@@ -421,32 +421,42 @@ namespace Audio900
                 //    previewHandles.Add(hiddenPreviewHost.Handle);
                 //}
 
-                var tlp = new TableLayoutPanel
-                {
-                    Dock = DockStyle.Fill,
-                    ColumnCount = cameraCount,
-                    RowCount = 1
-                };
-
-                panelCameraDisplay.Controls.Add(tlp);
+                // 根据物理屏幕数量分发显示
+                Screen[] screens = Screen.AllScreens;
 
                 for (int i = 0; i < cameraCount; i++)
                 {
-                    tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / cameraCount));
-
                     var display = new CogRecordDisplay
                     {
                         Dock = DockStyle.Fill,
                         BackColor = Color.Black,
-                        //
+                        //HorizontalScrollBar = false, 会导致异常报错
+                        //VerticalScrollBar = false
                     };
 
-                    tlp.Controls.Add(display, i, 0);
+                    if (i == 0)
+                    {
+                        // 相机0（主控相机）显示在主界面的 panelCameraDisplay 中
+                        panelCameraDisplay.Controls.Add(display);
+                    }
+                    else
+                    {
+                        // 其他相机分别对应其他物理显示器，如果没有足够显示器，默认叠加在主屏幕
+                        Screen targetScreen = screens.Length > i ? screens[i] : screens[0];
 
-                    display.HorizontalScrollBar = false;
-                    display.VerticalScrollBar = false;
+                        // 创建独立的无边框全屏窗体
+                        var displayForm = new Views.CameraDisplayForm();
+                        displayForm.StartPosition = FormStartPosition.Manual;
+                        displayForm.Bounds = targetScreen.Bounds;
+                        
+                        // 替换内部控件为我们自己创建的
+                        displayForm.Controls.Clear();
+                        displayForm.Controls.Add(display);
+                        
+                        displayForm.Show();
+                    }
+
                     display.Fit(true);
-                    //display.AutoFit = true;
                     _cogDisplays.Add(display);
                 }
 
@@ -1483,6 +1493,15 @@ namespace Audio900
         {
             try
             {
+                // 关闭并释放所有独立的相机显示窗体
+                foreach (Form openForm in Application.OpenForms.Cast<Form>().ToList())
+                {
+                    if (openForm is Views.CameraDisplayForm)
+                    {
+                        openForm.Close();
+                    }
+                }
+
                 // 停止相机
                 _cameraService?.StopCapture();
                 _cameraService?.Dispose();
