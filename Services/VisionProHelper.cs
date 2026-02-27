@@ -127,41 +127,52 @@ namespace Audio900.Services
                             step.DetectionROI, step.DetectionROIRotation);
                     }
 
-                    // 只显示在 ROI 内的检测框（绿色），过滤掉 ROI 外的检测框
-                    if (!step.EnableProcessDetection || currentBoxInROI)
+                    CogColorConstants boxColor = CogColorConstants.Green; // 默认颜色
+
+                    if (step != null && step.EnableProcessDetection)
                     {
-                        CogColorConstants boxColor = currentBoxInROI ? CogColorConstants.Green : CogColorConstants.Yellow;
-
-                        // 绘制识别框（支持旋转角度）
-                        var rect = new CogRectangleAffine();
-                        // 将角度从度转换为弧度
-                        double rotationRadians = pred.Angle * Math.PI / 180.0;
-                        rect.SetCenterLengthsRotationSkew(centerX, centerY,
-                            width, height, 
-                            rotationRadians, 0); // 使用 YOLO OBB 输出的旋转角度
-                        rect.Color = boxColor;
-                        rect.LineWidthInScreenPixels = 3;
-                        rect.Interactive = false;
-                        display.StaticGraphics.Add(rect, "DetectionBox");
-
-                        // 绘制中心点（红色小点）
-                        var centerDot = new CogCircle();
-                        centerDot.CenterX = centerX;
-                        centerDot.CenterY = centerY;
-                        centerDot.Radius = 5;
-                        centerDot.Color = CogColorConstants.Red;
-                        centerDot.LineWidthInScreenPixels = 2;
-                        display.StaticGraphics.Add(centerDot, "CenterPoint");
-
-                        // 添加标签（显示在检测框上方）
-                        var label = new CogGraphicLabel();
-                        label.SetXYText(centerX, centerY - height / 2.0 - 20,
-                            $"{pred.Label} : {pred.Confidence:P0} ({pred.Angle:F1}°)");
-                        label.Color = boxColor;
-                        label.Font = new Font("Arial", 10, FontStyle.Bold);
-                        label.Alignment = CogGraphicLabelAlignmentConstants.BaselineLeft;
-                        display.StaticGraphics.Add(label, "DetectionLabel");
+                        int expectedClassId = step.StepNumber - 1; // 步骤顺序和识别序号一一对应
+                        
+                        // 判定条件：中心点在 ROI 内 并且 识别到的类别与当前步骤一一对应
+                        if (currentBoxInROI && pred.ClassId == expectedClassId)
+                        {
+                            boxColor = CogColorConstants.Green; // 动作标准
+                        }
+                        else
+                        {
+                            boxColor = CogColorConstants.Red; // 动作不标准 或 在ROI外
+                        }
                     }
+
+                    // 绘制识别框（支持旋转角度）
+                    var rect = new CogRectangleAffine();
+                    // 将角度从度转换为弧度
+                    double rotationRadians = pred.Angle * Math.PI / 180.0;
+                    rect.SetCenterLengthsRotationSkew(centerX, centerY,
+                        width, height, 
+                        rotationRadians, 0); // 使用 YOLO OBB 输出的旋转角度
+                    rect.Color = boxColor;
+                    rect.LineWidthInScreenPixels = 3;
+                    rect.Interactive = false;
+                    display.StaticGraphics.Add(rect, "DetectionBox");
+
+                    // 绘制中心点（红色小点）
+                    var centerDot = new CogCircle();
+                    centerDot.CenterX = centerX;
+                    centerDot.CenterY = centerY;
+                    centerDot.Radius = 5;
+                    centerDot.Color = CogColorConstants.Red;
+                    centerDot.LineWidthInScreenPixels = 2;
+                    display.StaticGraphics.Add(centerDot, "CenterPoint");
+
+                    // 添加标签（显示在检测框上方）
+                    var label = new CogGraphicLabel();
+                    label.SetXYText(centerX, centerY - height / 2.0 - 20,
+                        $"{pred.Label} : {pred.Confidence:P0} ({pred.Angle:F1}°)");
+                    label.Color = boxColor;
+                    label.Font = new Font("Arial", 10, FontStyle.Bold);
+                    label.Alignment = CogGraphicLabelAlignmentConstants.BaselineLeft;
+                    display.StaticGraphics.Add(label, "DetectionLabel");
                 }
             }
         }
