@@ -8,7 +8,7 @@ namespace Audio900.Services
 {
     /// <summary>
     /// 标定服务 - 管理和应用相机标定
-    /// 核心思想：标定文件（.vpp）是"滤镜"，所有图像必须先通过标定转换为物理坐标系
+    /// 核心思想：所有图像必须先通过标定转换为物理坐标系
     /// </summary>
     public class CalibrationService : IDisposable
     {
@@ -79,7 +79,7 @@ namespace Audio900.Services
         //}
         
         /// <summary>
-        /// 应用标定到图像（核心"滤镜"功能）
+        /// 应用标定到图像
         /// 标准流程：加载 Transform -> Add 到图片的 CoordinateSpaceTree -> 后续工具自动使用
         /// </summary>
         /// <param name="image">原始图像（像素坐标）</param>
@@ -142,18 +142,7 @@ namespace Audio900.Services
             
             return _calibrations[cameraIndex].Calibration.ComputedRMSError;
         }
-        
-        /// <summary>
-        /// 获取标定的物理单位（通常是mm）
-        /// </summary>
-        public string GetCalibrationUnit(int cameraIndex)
-        {
-            if (!IsCalibrated(cameraIndex))
-                return "pixel";
-            
-            return "mm";
-        }
-        
+             
         /// <summary>
         /// 获取标定信息摘要
         /// </summary>

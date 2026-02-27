@@ -183,7 +183,7 @@ namespace Audio900.Models
         }
 
         /// <summary>
-        /// 是否需要图像稳定性检查（默认 true）
+        /// 是否需要图像稳定性检查
         /// </summary>
         public bool RequireStability
         {
@@ -287,7 +287,7 @@ namespace Audio900.Models
         }
 
         /// <summary>
-        /// 是否启用过程检测模式（基于 ROI 中心点判定）
+        /// 是否启用过程检测模式
         /// </summary>
         private bool _enableProcessDetection = false;
         public bool EnableProcessDetection
@@ -298,7 +298,6 @@ namespace Audio900.Models
 
         /// <summary>
         /// 目标类别过滤（可选）- 只检测特定类别的物体
-        /// 例如：只检测"手"或"工具"
         /// </summary>
         private List<int> _targetClassIds;
         public List<int> TargetClassIds

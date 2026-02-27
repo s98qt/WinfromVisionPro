@@ -136,7 +136,7 @@ namespace Audio900.Views
                 
                 cogRecordDisplay.Image = _capturedImage;
                 btnCalibrate.Enabled = true;
-                lblStatus.Text = "✅ 图像已抓取，请设置参数后执行标定";
+                lblStatus.Text = "图像已抓取，请设置参数后执行标定";
                 lblStatus.ForeColor = System.Drawing.Color.Green;
                 
                 LoggerService.Info("标定图像采集成功");
@@ -161,7 +161,7 @@ namespace Audio900.Views
                     return;
                 }
                 
-                lblStatus.Text = "⏳ 正在执行标定计算...";
+                lblStatus.Text = "正在执行标定计算...";
                 lblStatus.ForeColor = System.Drawing.Color.Blue;
                 Application.DoEvents();
                 
@@ -178,21 +178,21 @@ namespace Audio900.Views
                     if (rmsError < 0.25)
                     {
                         lblRMSError.ForeColor = System.Drawing.Color.Green;
-                        lblStatus.Text = "✅ 标定成功！精度优秀（RMS < 0.25）";
+                        lblStatus.Text = "标定成功！精度优秀（RMS < 0.25）";
                         lblStatus.ForeColor = System.Drawing.Color.Green;
                         btnSave.Enabled = true;
                     }
                     else if (rmsError < 0.5)
                     {
                         lblRMSError.ForeColor = System.Drawing.Color.Orange;
-                        lblStatus.Text = "⚠️ 标定成功，但精度一般（0.25 < RMS < 0.5）";
+                        lblStatus.Text = "标定成功，但精度一般（0.25 < RMS < 0.5）";
                         lblStatus.ForeColor = System.Drawing.Color.Orange;
                         btnSave.Enabled = true;
                     }
                     else
                     {
                         lblRMSError.ForeColor = System.Drawing.Color.Red;
-                        lblStatus.Text = "❌ 标定精度不足（RMS > 0.5），建议重新拍摄";
+                        lblStatus.Text = "标定精度不足（RMS > 0.5），建议重新拍摄";
                         lblStatus.ForeColor = System.Drawing.Color.Red;
                         btnSave.Enabled = false;
                     }
@@ -203,7 +203,7 @@ namespace Audio900.Views
                 }
                 else
                 {
-                    lblStatus.Text = $"❌ 标定失败: {_calibTool.RunStatus.Message}";
+                    lblStatus.Text = $"标定失败: {_calibTool.RunStatus.Message}";
                     lblStatus.ForeColor = System.Drawing.Color.Red;
                     
                     MessageBox.Show($"标定失败: {_calibTool.RunStatus.Message}\n\n可能原因：\n1. 棋盘格不清晰\n2. 参数设置错误\n3. 光照不均匀", 
@@ -214,7 +214,7 @@ namespace Audio900.Views
             }
             catch (Exception ex)
             {
-                lblStatus.Text = "❌ 标定计算异常";
+                lblStatus.Text = "标定计算异常";
                 lblStatus.ForeColor = System.Drawing.Color.Red;
                 
                 MessageBox.Show($"标定计算失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);

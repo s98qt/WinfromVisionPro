@@ -78,7 +78,7 @@ namespace Audio900.Services
         public event EventHandler<string> StatusMessageChanged;
         public event Action<WorkStep> OnStepCompleted;
         public event Action<string> OverallResultChanged;
-        public event Action<string, Color> RecordingStatusChanged; // status, color
+        public event Action<string, Color> RecordingStatusChanged; 
 
         // 新增：检测结果事件，携带图像和图形
         public event EventHandler<InspectionResultEventArgs> InspectionResultReady; // 用于结果的精准量测
@@ -146,7 +146,7 @@ namespace Audio900.Services
                     _stepToolBlocks.Clear();
                     
                     // 1. 加载全局深度学习模型 (从固定路径加载)
-                    // 策略变更：固定加载程序目录下 GlobalModel 文件夹内的 .onnx 模型
+                    // 固定加载程序目录下 GlobalModel 文件夹内的 .onnx 模型
                     string globalModelDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GlobalModel");
                     string modelPath = null;
 
@@ -238,7 +238,7 @@ namespace Audio900.Services
                         if (batch.Count > 0) // 单次检测
                         {
                             if (batch == null || batch.Count == 0) return;
-                           await ExecuteStandardCheckAsync(batch[0]);// 最后一步为最终检测
+                           await ExecuteStandardCheckAsync(batch[0]);// 暂时设定最后一步为最终量测
                             // 动态计算批处理超时时间
                             //int maxTimeout = batch.Max(s => s.Timeout > 0 ? s.Timeout : 5000);
                             //int batchTimeout = maxTimeout + 5000; // 加5秒缓冲
@@ -1267,7 +1267,7 @@ namespace Audio900.Services
                         }
                     }
 
-                    // 创建简单的图像记录（不包含图形，图形将在 MainForm 中通过 StaticGraphics 添加）
+                    // 创建简单的图像记录
                     record = new CogRecord("Image", typeof(ICogImage), CogRecordUsageConstants.Result, false, image, "Image");
                 }
             }
@@ -1285,7 +1285,7 @@ namespace Audio900.Services
         /// </summary>
         private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloOBBPrediction> Predictions)> RunHybridLogic(ICogImage image, WorkStep step, CogToolBlock toolBlock)
         {
-            // 跑深度学习 (YOLO) - 主要是为了获取 AR 效果 (框选物体)
+            // 跑深度学习  - 主要是为了获取 AR 效果
             var yoloResult = await RunDeepLearningLogic(image, step);
             
             // 默认使用 YOLO 的 Record 
