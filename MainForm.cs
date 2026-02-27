@@ -236,7 +236,7 @@ namespace Audio900
             try
             {
                 // 先检测相机数量
-                int detectedCameraCount = 1;/*CameraService.GetCameraCount();*/
+                int detectedCameraCount = CameraService.GetCameraCount();
                 LoggerService.Info($"检测到 {detectedCameraCount} 个相机");
 
                 if (detectedCameraCount == 0)
@@ -1320,12 +1320,12 @@ namespace Audio900
             try
             {
                 // 检查相机是否连接
-                if (_cameraService == null || !_cameraService.IsConnected)
-                {
-                    MessageBox.Show("相机未连接！\n请先连接相机后再使用数据采集工具。", 
-                        "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
+                //if (_cameraService == null || !_cameraService.IsConnected)
+                //{
+                //    MessageBox.Show("相机未连接！\n请先连接相机后再使用数据采集工具。", 
+                //        "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                //    return;
+                //}
 
                 // 打开数据采集窗口
                 var dataCollectionWindow = new DataCollectionWindow(_cameraService);
