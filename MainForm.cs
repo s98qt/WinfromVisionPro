@@ -429,31 +429,44 @@ namespace Audio900
                     var display = new CogRecordDisplay
                     {
                         Dock = DockStyle.Fill,
-                        BackColor = Color.Black,
-                        //HorizontalScrollBar = false, 会导致异常报错
-                        //VerticalScrollBar = false
+                        BackColor = Color.Black
                     };
 
                     if (i == 0)
                     {
                         // 相机0（主控相机）显示在主界面的 panelCameraDisplay 中
                         panelCameraDisplay.Controls.Add(display);
+                        
+                        // 主界面上的控件可以直接设置滚动条
+                        display.HorizontalScrollBar = false;
+                        display.VerticalScrollBar = false;
                     }
                     else
                     {
                         // 其他相机分别对应其他物理显示器，如果没有足够显示器，默认叠加在主屏幕
                         Screen targetScreen = screens.Length > i ? screens[i] : screens[0];
 
-                        // 创建独立的无边框全屏窗体
+                        // 创建独立的窗体
                         var displayForm = new Views.CameraDisplayForm();
                         displayForm.StartPosition = FormStartPosition.Manual;
+                        // 准确设置副屏的位置和大小（使用 Bounds 能确保落在对应的物理屏幕上）
                         displayForm.Bounds = targetScreen.Bounds;
                         
                         // 替换内部控件为我们自己创建的
                         displayForm.Controls.Clear();
                         displayForm.Controls.Add(display);
                         
+                        // 显示窗体后再最大化，这样能保证最大化发生在目标屏幕上
                         displayForm.Show();
+                        displayForm.WindowState = FormWindowState.Maximized;
+
+                        // 对于弹出窗体中的 ActiveX 控件，必须等窗体显示句柄创建后，再设置滚动条属性，否则会引发 InvalidActiveXStateException
+                        try
+                        {
+                            display.HorizontalScrollBar = false;
+                            display.VerticalScrollBar = false;
+                        }
+                        catch { /* 忽略在某些极端环境下仍可能抛出的异常 */ }
                     }
 
                     display.Fit(true);
