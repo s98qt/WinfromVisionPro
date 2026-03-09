@@ -30,6 +30,13 @@ namespace Audio.Services
         private static object locker1 = new object();
         private static PostMes instace1;
         string url = "http://10.32.16.50:8080/api/File/UploadFile";
+        string AssyGo = "http://10.32.16.114/api/Assy/AssyGo";
+        string AssyCheck = "http://10.32.16.97/api/Assy/AssyCheck";
+        string GetCmdResult = "http://10.32.16.97/api/Assy/GetCmdResult";
+        string CollectTestData = "http://10.32.16.97/api/Assy/CollectTestData";
+
+        string urltest = "http://10.32.16.142/api/Assy/AssyGo";
+
 
         /// <summary>
         /// 接收到消息时发生
@@ -66,17 +73,64 @@ namespace Audio.Services
         }
 
         /// <summary>
-        /// MesCheckSN
+        /// 根据UC获取SN
+        /// </summary>
+        /// <param name="uc"></param>
+        /// <returns></returns>
+        public string PostMesGetSN(string uc)
+        {
+            MesPostData _getSN = new MesPostData();
+            _getSN.serial_Number = uc;
+            _getSN.pCmd = "RFID_GET_SN";
+            string json = JsonHelper.ConvertJson(_getSN);
+            Post("http://10.32.16.142/api/Assy/GetCmdResult", json);
+            return _receiveMessage;
+        }
+
+        /// <summary>
+        /// 根据UC获取工单
+        /// </summary>
+        /// <param name="uc"></param>
+        /// <returns></returns>
+        public string PostMesGetWO(string uc)
+        {
+            MesPostData _getSN = new MesPostData();
+            _getSN.serial_Number = uc;
+            _getSN.pCmd = "G_WO_BY_SN";
+            string json = JsonHelper.ConvertJson(_getSN);
+            Post("http://10.32.16.142/api/Assy/GetCmdResult", json);
+            return _receiveMessage;
+        }
+
+        /// <summary>
+        /// 根据UC获取SN(一模多穴)
+        /// </summary>
+        /// <param name="uc"></param>
+        /// <returns></returns>
+        public string PostMesGetDoubleSN(string uc)
+        {
+            MesPostData _getSN = new MesPostData();
+            _getSN.serial_Number = uc;
+            _getSN.pCmd = "G_CAVITY_ASSYSN_BY_MGID_BUD";
+            string json = JsonHelper.ConvertJson(_getSN);
+            Post("", json);
+            return _receiveMessage;
+        }
+
+        /// <summary>
+        /// Mes过站
         /// </summary>
         /// <param name="sn"></param>
         /// <returns></returns>
-        public string PostCheckSN(string sn)
+        public string PostCheckSN(string sn,string toolingNo)
         {
-            MesPostTestData _mesCheckSN = new MesPostTestData();
+            MesPostTestDataGo _mesCheckSN = new MesPostTestDataGo();
             _mesCheckSN.serial_Number = sn;
+            _mesCheckSN.toolingNo = toolingNo;
+            _mesCheckSN.empNo = Params.Instance.empNo;
             string json = JsonHelper.ConvertJson(_mesCheckSN);
             string meslog = DateTime.Now.ToString("HH:mm:ss") + $"向Mes发送CheckSN {Params.Instance.getMESDataURL}:  " + "\r\n" + json + "\r\n";
-            Post(Params.Instance.getMESDataURL, json);
+            Post(urltest, json);
             meslog = DateTime.Now.ToString("HH:mm:ss") + "接收到Mes:  " + "\r\n" + _receiveMessage + "\r\n";
             return _receiveMessage;
         }
@@ -110,6 +164,7 @@ namespace Audio.Services
             //Common.OnUpdateUI(meslog, LogType.日志, false);
             return _receiveMessage;
         }
+
         /// <summary>
         /// MES上传图片
         /// </summary>
@@ -170,10 +225,31 @@ namespace Audio.Services
             }
         }
 
+        /// <summary>
+        /// GetCmdResult从mes获取信息
+        /// </summary>
+        public class MesPostData
+        {
+            public string empNo = "AUTOH90";
+            public string terminalName = "ITKS_E02-3FT-01A_5_STATION131";
+            public string serial_Number = "";
+            public string machine = "";
+            public string toolingNo = "";
+            public string lotNo = "";
+            public string kpsn = "";
+            public string workOrder = "";
+            public string cavity = "";
+            public string testData = "";
+            public string results = "";
+            public string status = "";
+            public string pCmd = "";
+            public string DefectCode = "";
+        }
+
         public class MesPostTestData
         {
-            public string empNo = "";
-            public string terminalName = "";
+            public string empNo = "AUTOH90";
+            public string terminalName = "ITKS_E02-3FT-01A_5_STATION131";
             public string serial_Number = "";
             public string machine = "";
             public string toolingNo = "";
@@ -185,6 +261,20 @@ namespace Audio.Services
             public string results = "";
             public string collectType = "REC";
         }
+
+        public class MesPostTestDataGo
+        {
+            public string empNo = "AUTOH90";
+            public string terminalName = "ITKS_E02-3FT-01A_5_STATION131";
+            public string serial_Number = "";
+            public string machine = "";
+            public string toolingNo = "";
+            public string lotNo = "";
+            public string kpsn = "";
+            public string reelNo = "";
+            public string workOrder = "";
+        }
+
         public class MesResult
         {
             public bool Result;

@@ -2,9 +2,10 @@ using Audio.Services;
 using Audio900.Models;
 using Cognex.VisionPro;
 using Cognex.VisionPro.ImageFile;
-using Cognex.VisionPro.Implementation;
 using Cognex.VisionPro.ImageProcessing;
+using Cognex.VisionPro.Implementation;
 using Cognex.VisionPro.ToolBlock;
+using Newtonsoft.Json;
 using NLog;
 using Params_OUMIT_;
 using System;
@@ -14,10 +15,11 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.Reflection;
+using static Audio.Services.PostMes;
 
 namespace Audio900.Services
 {
@@ -103,6 +105,55 @@ namespace Audio900.Services
         }
 
         /// <summary>
+        /// 程序启动时异步预加载深度学习模型，解决扫码卡顿问题
+        /// </summary>
+        public async Task PreloadGlobalModelAsync()
+        {
+            await Task.Run(() =>
+            {
+                string globalModelDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GlobalModel");
+                string modelPath = null;
+
+                if (Directory.Exists(globalModelDir))
+                {
+                    var onnxFiles = Directory.GetFiles(globalModelDir, "*.onnx");
+                    if (onnxFiles.Length > 0)
+                    {
+                        modelPath = onnxFiles[0];
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(modelPath))
+                {
+                    try
+                    {
+                        if (_globalYoloService == null || _loadedGlobalModelPath != modelPath)
+                        {
+                            _globalYoloService?.Dispose();
+
+                            if (File.Exists(modelPath))
+                            {
+                                _globalYoloService = new YoloOBBInference();
+                                _globalYoloService.LoadModel(modelPath, null);
+                                _loadedGlobalModelPath = modelPath;
+                                _logger.Info($"全局OBB模型预加载成功: {modelPath}");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        string errMsg = $"全局模型预加载失败: {ex.Message}";
+                        _logger.Error(errMsg);
+                    }
+                }
+                else
+                {
+                    _logger.Warn("未找到全局深度学习模型进行预加载");
+                }
+            });
+        }
+
+        /// <summary>
         /// 获取指定步骤的 ToolBlock（用于实时AR跟踪等场景）
         /// </summary>
         public bool GetToolBlock(int stepNumber, out CogToolBlock toolBlock)
@@ -110,17 +161,17 @@ namespace Audio900.Services
             return _stepToolBlocks.TryGetValue(stepNumber, out toolBlock);
         }
 
-
         /// <summary>
         /// 开始工作流程
         /// </summary>
-        public async void StartWorkflow(WorkTemplate currentTemplate, string productSN, string employeeID)
+        public async void StartWorkflow(WorkTemplate currentTemplate, string productSN, string employeeID,string toolingNo)
         {
             try
             {
                 _currentTemplate = currentTemplate;
                 Params.Instance.SN = productSN;
                 Params.Instance.empNo = employeeID;
+
 
                 RecordingStatusChanged?.Invoke("视频正在录制中...", Color.Red);
 
@@ -145,50 +196,11 @@ namespace Audio900.Services
 
                     _stepToolBlocks.Clear();
                     
-                    // 1. 加载全局深度学习模型 (从固定路径加载)
-                    // 固定加载程序目录下 GlobalModel 文件夹内的 .onnx 模型
-                    string globalModelDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GlobalModel");
-                    string modelPath = null;
-
-                    if (Directory.Exists(globalModelDir))
+                    // 模型现在在 MainForm_Load 时已经预加载好，这里只需要检查是否加载成功即可
+                    if (_globalYoloService == null)
                     {
-                        var onnxFiles = Directory.GetFiles(globalModelDir, "*.onnx");
-                        if (onnxFiles.Length > 0)
-                        {
-                            modelPath = onnxFiles[0];
-                        }
-                    }
-
-                    if (!string.IsNullOrEmpty(modelPath))
-                    {
-                        try
-                        {
-                            // 如果路径变了，或者服务未初始化，则重新加载
-                            if (_globalYoloService == null || _loadedGlobalModelPath != modelPath)
-                            {
-                                _globalYoloService?.Dispose();
-
-                                if (File.Exists(modelPath))
-                                {
-                                    _globalYoloService = new YoloOBBInference();
-                                    _globalYoloService.LoadModel(modelPath, null);
-                                    _loadedGlobalModelPath = modelPath;
-                                    _logger.Info($"全局OBB模型已加载: {modelPath}");
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            string errMsg = $"全局模型加载失败: {ex.Message}";
-                            _logger.Error(errMsg);
-                            MessageBox.Show(errMsg, "模型加载错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        }
-                    }
-                    else
-                    {
-                        string msg = "未找到全局深度学习模型！\r\n请确保程序目录下 GlobalModel 文件夹内存在 .onnx 模型文件。";
+                        string msg = "全局深度学习模型未加载或加载失败！\r\n请检查 GlobalModel 文件夹内是否存在有效的 .onnx 模型文件并重启软件。";
                         _logger.Error(msg);
-                        // 提示用户
                         MessageBox.Show(msg, "缺少模型", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     }
 
@@ -264,6 +276,11 @@ namespace Audio900.Services
                 ChangeState(WorkflowState.SavingData);
                 SaveImageAndVideo();
                 UpdateStatus("数据已保存");
+
+                // Mes过站
+                string strMesResult = PostMes.CreateInstance().PostCheckSN(productSN, toolingNo);
+                //MesResult mesResult = new MesResult();
+                //mesResult = JsonConvert.DeserializeAnonymousType<MesResult>(strMesResult, mesResult);
 
                 // 上传MES
                 ChangeState(WorkflowState.UploadingMES);

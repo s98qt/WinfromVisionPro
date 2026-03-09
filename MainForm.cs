@@ -20,6 +20,7 @@ using Params_OUMIT_;
 using System.Configuration;
 using System.Threading;
 using static Audio.Services.PostMes;
+using OpenCvSharp.Flann;
 
 namespace Audio900
 {
@@ -71,8 +72,12 @@ namespace Audio900
                 }
             };
 
+            // 强制将扫码框输入法置为关闭（纯英文状态），防止中文输入法吃掉扫码枪字符
+            txtProductSN.ImeMode = ImeMode.Disable;
+            txtViewNo.ImeMode = ImeMode.Disable;
             // 绑定扫码枪事件
-            txtProductSN.KeyDown += txtProductSN_KeyDown;
+            txtProductSN.KeyPress += txtProductSN_KeyPress;
+            txtViewNo.KeyPress += txtViewNo_KeyPress;
         }
 
         protected override void OnShown(EventArgs e)
@@ -81,6 +86,38 @@ namespace Audio900
             // 移动到OnShown以确保ActiveX控件初始化时窗口句柄已创建
             InitializeMultiCameraUI();
         }
+
+        private void txtViewNo_KeyPress(object sender, KeyPressEventArgs e)
+        {
+            // \r 代表回车键 (Enter)
+            if (e.KeyChar == '\r')
+            {
+                // 阻止发出“滴”的警告声
+                e.Handled = true;
+
+                if (string.IsNullOrWhiteSpace(txtViewNo.Text))
+                {
+                    MessageBox.Show("请扫描产品SN码", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                string toolingNO = txtViewNo.Text.Trim();
+                // 如果包含回车或换行符，安全去除
+                toolingNO = toolingNO.Replace("\r", "").Replace("\n", "");
+
+                //checkSN(Params.Instance.SN, toolingNO);
+
+                if (_currentTemplate == null)
+                {
+                    MessageBox.Show("请先选择作业模板", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                btnStart_Click(sender, EventArgs.Empty);
+            }
+                
+        }
+
 
         /// <summary>
         /// 从 ToolBlock 中提取核心工具（在模板加载后调用）
@@ -149,14 +186,14 @@ namespace Audio900
         }
 
         /// <summary>
-        /// 扫码枪输入产品SN后自动触发作业流程
+        /// 扫码枪输入产品SN后自动触发作业流程 (使用 KeyPress 防冲突)
         /// </summary>
-        private async void txtProductSN_KeyDown(object sender, KeyEventArgs e)
+        private void txtProductSN_KeyPress(object sender, KeyPressEventArgs e)
         {
-            if (e.KeyCode == Keys.Enter)
+            // \r 代表回车键 (Enter)
+            if (e.KeyChar == '\r')
             {
-                // 阻止Enter键的默认行为
-                e.SuppressKeyPress = true;
+                // 阻止发出“滴”的警告声
                 e.Handled = true;
 
                 if (string.IsNullOrWhiteSpace(txtProductSN.Text))
@@ -166,26 +203,85 @@ namespace Audio900
                 }
                 
                 string sn = txtProductSN.Text.Trim();
-                
-                Params.Instance.SN = sn;
-                //checkSN(Params.Instance.SN);
+                // 如果包含回车或换行符，安全去除
+                sn = sn.Replace("\r", "").Replace("\n", "");
 
-                if (_currentTemplate == null)
+                string toolingNO = txtViewNo.Text.Trim();
+                // 如果包含回车或换行符，安全去除
+                toolingNO = toolingNO.Replace("\r", "").Replace("\n", "");
+             
+                string txtBackSN;
+                txtBackSN = PostMes.CreateInstance().PostMesGetSN(sn);
+                MesResult mesResult = new MesResult();
+                mesResult = JsonConvert.DeserializeAnonymousType<MesResult>(txtBackSN, mesResult);
+                if (mesResult.Result)
                 {
-                    MessageBox.Show("请先选择作业模板", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
+                    sn = Sub2SN(mesResult.RetMsg)[0];               
                 }
 
-                btnStart_Click(sender, e);
-                
+                txtBackSN = PostMes.CreateInstance().PostMesGetWO(sn);
+                MesResult mesResultWO = new MesResult();
+                mesResultWO = JsonConvert.DeserializeAnonymousType<MesResult>(txtBackSN, mesResultWO);
+                string workOrder = string.Empty;
+                if (mesResultWO.Result)
+                {
+                    workOrder = Sub2SN(mesResultWO.RetMsg)[0];
+                }
+
+                txtWorkOrder.Text = workOrder;
+                Params.Instance.empNo = txtEmployeeId.Text;
+                Params.Instance.SN = sn;
+                txtProductSN.Text = sn;
+                txtViewNo.Focus();
+                txtViewNo.SelectAll();
+
+
+
+                //btnStart_Click(sender, EventArgs.Empty);
             }
         }
 
-        public void checkSN(string sn)
+        private List<string> Sub2SN(string str)
+        {
+            List<string> list = new List<string>();
+            try
+            {
+                string[] data = str.Split(',');
+                foreach (string s in data)
+                {
+                    list.Add(s.Split('=')[1]);
+                }
+            }
+            catch
+            {
+                return list;
+            }
+            return list;
+        }
+
+        private List<string> Sub2Head(string str)
+        {
+            List<string> list = new List<string>();
+            try
+            {
+                string[] data = str.Split(',');
+                foreach (string s in data)
+                {
+                    list.Add(s.Split('=')[0]);
+                }
+            }
+            catch
+            {
+                return list;
+            }
+            return list;
+        }
+
+        public void checkSN(string sn,string toolingNo)
         {
             try
             {
-                string strMesResult = PostMes.CreateInstance().PostCheckSN(sn);
+                string strMesResult = PostMes.CreateInstance().PostCheckSN(sn,toolingNo);
                 MesResult mesResult = new MesResult();
                 mesResult = JsonConvert.DeserializeAnonymousType<MesResult>(strMesResult, mesResult);          
                 
@@ -449,14 +545,19 @@ namespace Audio900
                         // 创建独立的窗体
                         var displayForm = new Views.CameraDisplayForm();
                         displayForm.StartPosition = FormStartPosition.Manual;
-                        // 准确设置副屏的位置和大小（使用 Bounds 能确保落在对应的物理屏幕上）
+                        
+                        // 1. 确保窗体处于普通状态才能设置位置
+                        displayForm.WindowState = FormWindowState.Normal;
+                        // 2. 强制将窗体的左上角坐标设置到目标屏幕的坐标系内
+                        displayForm.Location = targetScreen.WorkingArea.Location;
+                        // 3. 准确设置副屏的大小
                         displayForm.Bounds = targetScreen.Bounds;
                         
                         // 替换内部控件为我们自己创建的
                         displayForm.Controls.Clear();
                         displayForm.Controls.Add(display);
                         
-                        // 显示窗体后再最大化，这样能保证最大化发生在目标屏幕上
+                        // 4. 显示窗体后再最大化，这样能保证最大化发生在目标屏幕上
                         displayForm.Show();
                         displayForm.WindowState = FormWindowState.Maximized;
 
@@ -466,7 +567,7 @@ namespace Audio900
                             display.HorizontalScrollBar = false;
                             display.VerticalScrollBar = false;
                         }
-                        catch { /* 忽略在某些极端环境下仍可能抛出的异常 */ }
+                        catch {  }
                     }
 
                     display.Fit(true);
@@ -586,25 +687,25 @@ namespace Audio900
                 //}
 
                 // 限制 UI 刷新频率为约 15 FPS (60ms)
-                if (!_lastUiUpdateByCameraIndex.ContainsKey(e.CameraIndex))
-                {
-                    _lastUiUpdateByCameraIndex[e.CameraIndex] = DateTime.MinValue;
-                }
+                //if (!_lastUiUpdateByCameraIndex.ContainsKey(e.CameraIndex))
+                //{
+                //    _lastUiUpdateByCameraIndex[e.CameraIndex] = DateTime.MinValue;
+                //}
 
-                if ((DateTime.Now - _lastUiUpdateByCameraIndex[e.CameraIndex]).TotalMilliseconds < 60)
-                {
-                    return; // 距离上次刷新不足60ms，跳过
-                }
-                _lastUiUpdateByCameraIndex[e.CameraIndex] = DateTime.Now;
+                //if ((DateTime.Now - _lastUiUpdateByCameraIndex[e.CameraIndex]).TotalMilliseconds < 60)
+                //{
+                //    return; // 距离上次刷新不足60ms，跳过
+                //}
+                //_lastUiUpdateByCameraIndex[e.CameraIndex] = DateTime.Now;
 
-                // AR模式看门狗检查
-                if (e.CameraIndex >= 0 && e.CameraIndex < _lastArUpdateTime.Length)
-                {
-                    if ((DateTime.Now - _lastArUpdateTime[e.CameraIndex]).TotalMilliseconds < 500)
-                    {
-                        return;
-                    }
-                }
+                //// AR模式看门狗检查
+                //if (e.CameraIndex >= 0 && e.CameraIndex < _lastArUpdateTime.Length)
+                //{
+                //    if ((DateTime.Now - _lastArUpdateTime[e.CameraIndex]).TotalMilliseconds < 500)
+                //    {
+                //        return;
+                //    }
+                //}
 
                 if (InvokeRequired)
                 {
@@ -791,6 +892,9 @@ namespace Audio900
             _workflowService.ToolBlockDebugReady += OnToolBlockDebugReady;
             _workflowService.EnableDebugPopup = chkDebugMode.Checked;
             
+            // 触发异步预加载全局深度学习模型
+            _ = _workflowService.PreloadGlobalModelAsync();
+
             // 相机连接状态现在通过 CameraService.IsConnected 属性自动获取
         }
 
@@ -1289,9 +1393,13 @@ namespace Audio900
                 }
             }
 
-            flpMainSteps.ScrollControlIntoView(targetPanel);
+            //flpMainSteps.ScrollControlIntoView(targetPanel);
+            //flpMainSteps.AutoScrollPosition = new Point(0, targetPanel.Bottom + flpMainSteps.VerticalScroll.Value - flpMainSteps.ClientSize.Height);
+            // 自动滚动
+            flpMainSteps.AutoScrollPosition = new Point(0, targetPanel.Bottom + flpMainSteps.VerticalScroll.Value - (flpMainSteps.ClientSize.Height/2));
+
         }
-        
+
         private void OnWorkflowRecordingStatusChanged(string status, Color color)
         {
              if (InvokeRequired)
@@ -1469,7 +1577,13 @@ namespace Audio900
                  _workflowService.StartWorkflow(
                     _currentTemplate, 
                     txtProductSN.Text, 
-                    txtEmployeeId.Text);
+                    txtEmployeeId.Text, txtViewNo.Text);
+
+                // 恢复初始化模式
+                txtProductSN.Focus();
+                txtProductSN.SelectAll();
+                flpMainSteps.AutoScrollPosition = new Point(0, 0);
+                //flpMainSteps.ScrollControlIntoView(targetPanel);
             }
             catch (Exception ex)
             {

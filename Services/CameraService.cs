@@ -552,23 +552,29 @@ namespace Audio900.Services
                             if (_parentControl != null && !_parentControl.IsDisposed)
                             {
                                 var imageToSend = safeImageForUi;
-                                _parentControl.BeginInvoke(new Action(() =>
+                                // 尝试获取锁，如果 UI 还在处理上一帧（锁被占用），则直接丢弃这一帧（不渲染到UI）
+                                //if (Monitor.TryEnter(_parentControl))
                                 {
-                                    try
+                                    _parentControl.BeginInvoke(new Action(() =>
                                     {
-                                        // 使用安全的深拷贝图像触发事件，而不是原始的 cogImage
-                                        if (imageToSend != null)
-                                            ImageCaptured?.Invoke(this, imageToSend);
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        LoggerService.Error(ex, $"图像事件触发失败: {ex.Message}");
-                                    }
-                                }));
+                                        try
+                                        {
+                                            if (imageToSend != null)
+                                                ImageCaptured?.Invoke(this, imageToSend);
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            LoggerService.Error(ex, $"图像事件触发失败: {ex.Message}");
+                                        }
+                                        //finally
+                                        //{
+                                        //    // UI 渲染完成后释放锁，允许下一帧进入
+                                        //    try { Monitor.Exit(_parentControl); } catch { }
+                                        //}
+                                    }));
+                                }
                             }                          
                         }
-
-                        Thread.Sleep(33);
                     }
                     else
                     {
@@ -635,7 +641,8 @@ namespace Audio900.Services
                                 lock (_frameLock)
                                 {
                                     // CopyImage 执行了 CopyPixels，生成了深拷贝图像，内存独立安全
-                                    _latestFrame = CopyImage(cogImage);
+                                    //_latestFrame = CopyImage(cogImage);
+                                    _latestFrame = cogImage;
                                     safeImageForUi = _latestFrame;
                                 }
 
@@ -654,23 +661,28 @@ namespace Audio900.Services
                                 if (_parentControl != null && !_parentControl.IsDisposed)
                                 {
                                     var imageToSend = safeImageForUi;
-                                    _parentControl.BeginInvoke(new Action(() =>
+                                    // 添加丢帧机制：防止UI渲染过慢导致图像队列积压产生延时
+                                    //if (Monitor.TryEnter(_parentControl))
                                     {
-                                        try
+                                        _parentControl.BeginInvoke(new Action(() =>
                                         {
-                                            // 使用安全的深拷贝图像触发事件，而不是原始的 cogImage
-                                            if (imageToSend != null)
-                                                ImageCaptured?.Invoke(this, imageToSend);
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            LoggerService.Error(ex, $"图像事件触发失败: {ex.Message}");
-                                        }
-                                    }));
+                                            try
+                                            {
+                                                if (imageToSend != null)
+                                                    ImageCaptured?.Invoke(this, imageToSend);
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                LoggerService.Error(ex, $"图像事件触发失败: {ex.Message}");
+                                            }
+                                            //finally
+                                            //{
+                                            //    try { Monitor.Exit(_parentControl); } catch { }
+                                            //}
+                                        }));
+                                    }
                                 }
                             }
-
-                            Thread.Sleep(33);
                         }
                         else
                         {

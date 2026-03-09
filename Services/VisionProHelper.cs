@@ -134,7 +134,7 @@ namespace Audio900.Services
                         int expectedClassId = step.StepNumber - 1; // 步骤顺序和识别序号一一对应
                         
                         // 判定条件：中心点在 ROI 内 并且 识别到的类别与当前步骤一一对应
-                        if (currentBoxInROI && pred.ClassId == expectedClassId)
+                        if (currentBoxInROI && pred.ClassId == expectedClassId )
                         {
                             boxColor = CogColorConstants.Green; // 动作标准
                         }
