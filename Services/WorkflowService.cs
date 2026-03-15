@@ -1594,11 +1594,11 @@ namespace Audio900.Services
             }
         }
     
-        private async Task ChangeState(WorkflowState newState)
+        private Task ChangeState(WorkflowState newState)
         {
             _currentState = newState;
             StateChanged?.Invoke(this, newState);
-            await Task.Delay(100); 
+            return Task.CompletedTask;
         }
 
         public void UpdateStatus(string message)

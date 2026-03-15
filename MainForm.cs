@@ -47,6 +47,12 @@ namespace Audio900
         
         // 状态标志
         private bool _isWorkflowRunning = false;
+
+        // 自动采图服务
+        private AutoDatasetExportService _autoDatasetExportService;
+        private volatile bool _autoCaptureEnabled = false;
+        private readonly Dictionary<int, DateTime> _ngCaptureTimestamps = new Dictionary<int, DateTime>();
+        private const int NG_CAPTURE_INTERVAL_MS = 5000; // NG帧采样间隔（毫秒）
         
         // 实时AR跟踪相关（支持双相机独立跟踪）
         private bool[] _isLiveTrackingByCamera = new bool[2]; // 每个相机独立的跟踪状态
@@ -71,6 +77,14 @@ namespace Audio900
                     _workflowService.EnableDebugPopup = chkDebugMode.Checked;
                 }
             };
+
+            chkAutoCapture.CheckedChanged += (s, e) =>
+            {
+                _autoCaptureEnabled = chkAutoCapture.Checked;
+                LoggerService.Info($"自动采图: {(_autoCaptureEnabled ? "已开启" : "已关闭")}");
+            };
+
+            _autoDatasetExportService = new AutoDatasetExportService();
 
             // 强制将扫码框输入法置为关闭（纯英文状态），防止中文输入法吃掉扫码枪字符
             txtProductSN.ImeMode = ImeMode.Disable;
@@ -597,6 +611,7 @@ namespace Audio900
         private void PrepareUiForNewRun()
         {
             _freezeUntilByCameraIndex.Clear();
+            lock (_ngCaptureTimestamps) { _ngCaptureTimestamps.Clear(); }
 
             foreach (var display in _cogDisplays)
             {
@@ -1076,6 +1091,9 @@ namespace Audio900
             int cameraIndex = e.Step.CameraIndex;
             if (cameraIndex < 0 || cameraIndex >= _cogDisplays.Count) return;
 
+            // 后台自动采图（当前已在后台线程，直接调用）
+            TryAutoCapture(e);
+
             if (cameraIndex < _lastArUpdateTime.Length)
                 _lastArUpdateTime[cameraIndex] = DateTime.Now;
             this.BeginInvoke(new Action(() =>
@@ -1151,8 +1169,10 @@ namespace Audio900
         /// <param name="e"></param>
         private void OnInspectionResultReady(object sender, InspectionResultEventArgs e)
         {
+            // 后台自动采图（首次调用在后台线程，InvokeRequired 为 true）
             if (InvokeRequired)
             {
+                TryAutoCapture(e);
                 BeginInvoke(new EventHandler<InspectionResultEventArgs>(OnInspectionResultReady), sender, e);
                 return;
             }
@@ -1278,8 +1298,58 @@ namespace Audio900
         }
 
         /// <summary>
-        /// 播放提示音
+        /// 后台自动采图：将检测事件中的图像和标签按OK/NG分类保存到本地
+        /// 从事件回调线程调用，不阻塞UI
         /// </summary>
+        private void TryAutoCapture(InspectionResultEventArgs e)
+        {
+            if (!_autoCaptureEnabled) return;
+            if (e?.Image == null || e?.Step == null || _currentTemplate == null) return;
+
+            if (!e.IsPassed)
+            {
+                // NG帧限速：同一步骤每 NG_CAPTURE_INTERVAL_MS 毫秒最多存一张
+                int key = e.Step.StepNumber;
+                lock (_ngCaptureTimestamps)
+                {
+                    if (_ngCaptureTimestamps.TryGetValue(key, out DateTime last) &&
+                        (DateTime.Now - last).TotalMilliseconds < NG_CAPTURE_INTERVAL_MS)
+                        return;
+                    _ngCaptureTimestamps[key] = DateTime.Now;
+                }
+            }
+
+            // 在当前后台线程上转换为Bitmap（避免ICogImage被下一轮循环覆盖/释放）
+            Bitmap bmp;
+            try { bmp = e.Image.ToBitmap(); }
+            catch { return; }
+
+            var template = _currentTemplate;
+            var step = e.Step;
+            var isPassed = e.IsPassed;
+            var predictions = e.Predictions;
+            var results = e.Results;
+            var sn = Params.Instance.SN;
+            var empId = Params.Instance.empNo;
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    _autoDatasetExportService.ExportFromBitmap(
+                        template, step, bmp, isPassed, sn, empId, predictions, results);
+                }
+                catch (Exception ex)
+                {
+                    LoggerService.Error(ex, "自动采图保存失败");
+                }
+                finally
+                {
+                    bmp.Dispose();
+                }
+            });
+        }
+
         private void PlayBeepSound()
         {
             try

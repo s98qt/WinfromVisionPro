@@ -45,6 +45,8 @@ namespace Audio900.Services
         private int _cameraIndex;
         private readonly object _frameLock = new object();
         private ICogImage _latestFrame = null;
+        private IntPtr _rgbBuffer1960 = IntPtr.Zero;
+        private int _rgbBuffer1960Size = 0;
         private VideoRecordingService _videoRecordingService;
         private bool _isInitialized = false;
         private AutoResetEvent _newFrameSignal = new AutoResetEvent(false);
@@ -528,16 +530,12 @@ namespace Audio900.Services
 
                         if (cogImage != null)
                         {
-                            ICogImage safeImageForUi = null;
                             lock (_frameLock)
                             {
-                                // CopyImage 执行了 CopyPixels，生成了深拷贝图像，内存独立安全
-                                _latestFrame = CopyImage(cogImage);
-                                safeImageForUi = _latestFrame;
+                                _latestFrame = cogImage;
                             }
 
                             _newFrameSignal.Set();
-
 
                             if (_videoRecordingService != null && _videoRecordingService.IsRecording)
                             {
@@ -551,9 +549,9 @@ namespace Audio900.Services
 
                             if (_parentControl != null && !_parentControl.IsDisposed)
                             {
-                                var imageToSend = safeImageForUi;
-                                // 尝试获取锁，如果 UI 还在处理上一帧（锁被占用），则直接丢弃这一帧（不渲染到UI）
-                                //if (Monitor.TryEnter(_parentControl))
+                                var imageToSend = cogImage;
+                                // 丢帧机制：UI还在处理上一帧时，直接丢弃新帧，防止消息队列积压导致卡顿
+                                if (Monitor.TryEnter(_parentControl))
                                 {
                                     _parentControl.BeginInvoke(new Action(() =>
                                     {
@@ -566,15 +564,16 @@ namespace Audio900.Services
                                         {
                                             LoggerService.Error(ex, $"图像事件触发失败: {ex.Message}");
                                         }
-                                        //finally
-                                        //{
-                                        //    // UI 渲染完成后释放锁，允许下一帧进入
-                                        //    try { Monitor.Exit(_parentControl); } catch { }
-                                        //}
+                                        finally
+                                        {
+                                            try { Monitor.Exit(_parentControl); } catch { }
+                                        }
                                     }));
                                 }
-                            }                          
+                            }
                         }
+                        // 限制帧率：约30fps，避免CPU空转
+                        Thread.Sleep(33);
                     }
                     else
                     {
@@ -599,7 +598,7 @@ namespace Audio900.Services
                 {
                     LoggerService.Error(ex, $"采集线程异常: {ex.Message}");
                     Thread.Sleep(100);
-                }            
+                }
             }
         }
 
@@ -609,48 +608,58 @@ namespace Audio900.Services
         private void CaptureThreadProc1960()
         {
             int getImageErrorCount = 0;
+            int currentWidth = 0;
+            int currentHeight = 0;
 
-            while (_capture && _isRunning)
+            try
             {
-                try
+                while (_capture && _isRunning)
                 {
-                    if (_camera1960 == null || _camera1960.DeviceHandle == IntPtr.Zero)
-                    {
-                        Thread.Sleep(100);
-                        continue;
-                    }
-
-                    int w = (int)_camera1960.CollectWidth;
-                    int h = (int)_camera1960.CollectHeight;
-                    int bufferSize = w * h * 3;
-                    IntPtr rgbBuffer = Marshal.AllocHGlobal(bufferSize);
-
                     try
                     {
-                        int result = DllFunction.UVC_GetRgbFrame(_camera1960.DeviceHandle, rgbBuffer);
+                        if (_camera1960 == null || _camera1960.DeviceHandle == IntPtr.Zero)
+                        {
+                            Thread.Sleep(100);
+                            continue;
+                        }
+
+                        int w = (int)_camera1960.CollectWidth;
+                        int h = (int)_camera1960.CollectHeight;
+                        int bufferSize = w * h * 3;
+
+                        if (_rgbBuffer1960 == IntPtr.Zero || _rgbBuffer1960Size != bufferSize || currentWidth != w || currentHeight != h)
+                        {
+                            if (_rgbBuffer1960 != IntPtr.Zero)
+                            {
+                                Marshal.FreeHGlobal(_rgbBuffer1960);
+                            }
+
+                            _rgbBuffer1960 = Marshal.AllocHGlobal(bufferSize);
+                            _rgbBuffer1960Size = bufferSize;
+                            currentWidth = w;
+                            currentHeight = h;
+                        }
+
+                        int result = DllFunction.UVC_GetRgbFrame(_camera1960.DeviceHandle, _rgbBuffer1960);
 
                         if (result == 0)
                         {
                             getImageErrorCount = 0;
 
-                            ICogImage cogImage = ConvertRgbBufferToCogImage(rgbBuffer, w, h);
+                            ICogImage cogImage = ConvertRgbBufferToCogImage(_rgbBuffer1960, w, h);
 
                             if (cogImage != null)
                             {
-                                ICogImage safeImageForUi = null;
                                 lock (_frameLock)
                                 {
-                                    // CopyImage 执行了 CopyPixels，生成了深拷贝图像，内存独立安全
-                                    //_latestFrame = CopyImage(cogImage);
                                     _latestFrame = cogImage;
-                                    safeImageForUi = _latestFrame;
                                 }
 
                                 _newFrameSignal.Set();
 
                                 if (_videoRecordingService != null && _videoRecordingService.IsRecording)
                                 {
-                                    Bitmap bitmap = CreateBitmapFromRgbBuffer(rgbBuffer, w, h);
+                                    Bitmap bitmap = CreateBitmapFromRgbBuffer(_rgbBuffer1960, w, h);
                                     if (bitmap != null)
                                     {
                                         _videoRecordingService.WriteFrameDirect(bitmap);
@@ -660,9 +669,9 @@ namespace Audio900.Services
 
                                 if (_parentControl != null && !_parentControl.IsDisposed)
                                 {
-                                    var imageToSend = safeImageForUi;
-                                    // 添加丢帧机制：防止UI渲染过慢导致图像队列积压产生延时
-                                    //if (Monitor.TryEnter(_parentControl))
+                                    var imageToSend = cogImage;
+                                    // 丢帧机制：UI还在处理上一帧时，直接丢弃新帧，防止消息队列积压导致卡顿
+                                    if (Monitor.TryEnter(_parentControl))
                                     {
                                         _parentControl.BeginInvoke(new Action(() =>
                                         {
@@ -675,14 +684,16 @@ namespace Audio900.Services
                                             {
                                                 LoggerService.Error(ex, $"图像事件触发失败: {ex.Message}");
                                             }
-                                            //finally
-                                            //{
-                                            //    try { Monitor.Exit(_parentControl); } catch { }
-                                            //}
+                                            finally
+                                            {
+                                                try { Monitor.Exit(_parentControl); } catch { }
+                                            }
                                         }));
                                     }
                                 }
                             }
+                            // 限制帧率：约30fps，避免CPU空转
+                            Thread.Sleep(33);
                         }
                         else
                         {
@@ -703,18 +714,20 @@ namespace Audio900.Services
                             Thread.Sleep(50);
                         }
                     }
-                    finally
+                    catch (Exception ex)
                     {
-                        if (rgbBuffer != IntPtr.Zero)
-                        {
-                            Marshal.FreeHGlobal(rgbBuffer);
-                        }
+                        LoggerService.Error(ex, $"1960采集线程异常: {ex.Message}");
+                        Thread.Sleep(100);
                     }
                 }
-                catch (Exception ex)
+            }
+            finally
+            {
+                if (_rgbBuffer1960 != IntPtr.Zero)
                 {
-                    LoggerService.Error(ex, $"1960采集线程异常: {ex.Message}");
-                    Thread.Sleep(100);
+                    Marshal.FreeHGlobal(_rgbBuffer1960);
+                    _rgbBuffer1960 = IntPtr.Zero;
+                    _rgbBuffer1960Size = 0;
                 }
             }
         }
@@ -755,6 +768,13 @@ namespace Audio900.Services
                     disposable.Dispose();
                 }
                 _latestFrame = null;
+            }
+
+            if (_rgbBuffer1960 != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(_rgbBuffer1960);
+                _rgbBuffer1960 = IntPtr.Zero;
+                _rgbBuffer1960Size = 0;
             }
         }
 

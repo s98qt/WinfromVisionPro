@@ -42,6 +42,7 @@
             this.label5 = new System.Windows.Forms.Label();
             this.txtFileName = new System.Windows.Forms.TextBox();
             this.panelTop = new System.Windows.Forms.Panel();
+            this.chkAutoCapture = new System.Windows.Forms.CheckBox();
             this.chkDebugMode = new System.Windows.Forms.CheckBox();
             this.lblCameraVideoStatus = new System.Windows.Forms.Label();
             this.lblImageArea = new System.Windows.Forms.Label();
@@ -242,6 +243,7 @@
             // panelTop
             // 
             this.panelTop.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(33)))), ((int)(((byte)(150)))), ((int)(((byte)(243)))));
+            this.panelTop.Controls.Add(this.chkAutoCapture);
             this.panelTop.Controls.Add(this.chkDebugMode);
             this.panelTop.Controls.Add(this.lblCameraVideoStatus);
             this.panelTop.Controls.Add(this.lblImageArea);
@@ -253,6 +255,20 @@
             this.panelTop.Name = "panelTop";
             this.panelTop.Size = new System.Drawing.Size(905, 35);
             this.panelTop.TabIndex = 0;
+            // 
+            // chkAutoCapture
+            // 
+            this.chkAutoCapture.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.chkAutoCapture.AutoSize = true;
+            this.chkAutoCapture.Font = new System.Drawing.Font("微软雅黑", 10.5F);
+            this.chkAutoCapture.ForeColor = System.Drawing.Color.White;
+            this.chkAutoCapture.Location = new System.Drawing.Point(420, 6);
+            this.chkAutoCapture.Margin = new System.Windows.Forms.Padding(1, 2, 1, 2);
+            this.chkAutoCapture.Name = "chkAutoCapture";
+            this.chkAutoCapture.Size = new System.Drawing.Size(98, 24);
+            this.chkAutoCapture.TabIndex = 20;
+            this.chkAutoCapture.Text = "自动采图";
+            this.chkAutoCapture.UseVisualStyleBackColor = true;
             // 
             // chkDebugMode
             // 
@@ -589,6 +605,7 @@
         private System.Windows.Forms.TableLayoutPanel tlpInputFields;
         private System.Windows.Forms.CheckBox chkDebugMode;
         private System.Windows.Forms.Button btnCalibration;
+        private System.Windows.Forms.CheckBox chkAutoCapture;
     }
 }
 
