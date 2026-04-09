@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -10,17 +11,16 @@ using System.Windows.Forms;
 using Audio900.Models;
 using Audio900.Services;
 using Audio900.Views;
-using Cognex.VisionPro;
-using Cognex.VisionPro.Display;
-using Cognex.VisionPro.ToolBlock;
-using Cognex.VisionPro.PMAlign;
+using Audio900.Controls;
 using Newtonsoft.Json;
 using Audio.Services;
 using Params_OUMIT_;
 using System.Configuration;
+using System.Security.Cryptography;
 using System.Threading;
 using static Audio.Services.PostMes;
 using OpenCvSharp.Flann;
+using System.IO;
 
 namespace Audio900
 {
@@ -34,11 +34,11 @@ namespace Audio900
         private CalibrationService _calibrationService;
 
         private const int _fallbackCameraCountWhenDetectFailsDefault = 2;
-        private EventHandler<ICogImage> _singleCameraImageCapturedHandler;
+        private EventHandler<Bitmap> _singleCameraImageCapturedHandler;
         
         // 当前模板和步骤
         private WorkTemplate _currentTemplate;
-        private List<CogRecordDisplay> _cogDisplays = new List<CogRecordDisplay>();
+        private List<LightweightImageDisplay> _cogDisplays = new List<LightweightImageDisplay>();
         private readonly Dictionary<int, DateTime> _freezeUntilByCameraIndex = new Dictionary<int, DateTime>();
         
         // 调试窗口管理
@@ -52,12 +52,16 @@ namespace Audio900
         private AutoDatasetExportService _autoDatasetExportService;
         private volatile bool _autoCaptureEnabled = false;
         private readonly Dictionary<int, DateTime> _ngCaptureTimestamps = new Dictionary<int, DateTime>();
+        private readonly Dictionary<int, DateTime> _autoCaptureTimestamps = new Dictionary<int, DateTime>();
+        private readonly Dictionary<int, string> _lastCaptureFingerprints = new Dictionary<int, string>();
         private const int NG_CAPTURE_INTERVAL_MS = 5000; // NG帧采样间隔（毫秒）
+        private const int AUTO_CAPTURE_DUPLICATE_INTERVAL_MS = 1500; // 同步样本去重间隔（毫秒）
+        private const double AUTO_CAPTURE_HIGH_CONFIDENCE = 0.85;
+        private const double AUTO_CAPTURE_LOW_CONFIDENCE = 0.55;
         
         // 实时AR跟踪相关（支持双相机独立跟踪）
         private bool[] _isLiveTrackingByCamera = new bool[2]; // 每个相机独立的跟踪状态
         private CancellationTokenSource[] _trackingCancellationByCamera = new CancellationTokenSource[2]; // 每个相机独立的取消令牌
-        private CogPMAlignTool[] _liveTrackToolByCamera = new CogPMAlignTool[2]; // 每个相机对应的核心工具缓存
 
         public MainForm()
         {
@@ -132,72 +136,6 @@ namespace Audio900
                 
         }
 
-
-        /// <summary>
-        /// 从 ToolBlock 中提取核心工具（在模板加载后调用）
-        /// </summary>
-        private void PrepareLiveTrackingTools()
-        {
-            if (_currentTemplate == null || _workflowService == null)
-                return;
-
-            // 遍历模板步骤，为每个相机提取对应的工具
-            foreach (var step in _currentTemplate.Steps)
-            {
-                int cameraIndex = step.CameraIndex;
-                if (cameraIndex < 0 || cameraIndex >= _liveTrackToolByCamera.Length)
-                    continue;
-
-                if (_liveTrackToolByCamera[cameraIndex] != null)
-                    continue;
-
-                // 从 WorkflowService 获取该步骤的 ToolBlock
-                if (_workflowService.GetToolBlock(step.StepNumber, out CogToolBlock toolBlock))
-                {
-                    // 从 ToolBlock 中查找 PMAlign 工具
-                    CogPMAlignTool pmAlignTool = FindPMAlignToolInToolBlock(toolBlock);
-                    
-                    if (pmAlignTool != null)
-                    {
-                        _liveTrackToolByCamera[cameraIndex] = pmAlignTool;
-                        LoggerService.Info($"相机{cameraIndex} AR跟踪工具已缓存：{pmAlignTool.Name}");
-                    }
-                    else
-                    {
-                        LoggerService.Warn($"步骤{step.StepNumber}（相机{cameraIndex}）未找到 CogPMAlignTool");
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// 在 ToolBlock 中递归查找 CogPMAlignTool
-        /// </summary>
-        private CogPMAlignTool FindPMAlignToolInToolBlock(CogToolBlock toolBlock)
-        {
-            if (toolBlock == null || toolBlock.Tools == null)
-                return null;
-
-            // 遍历 ToolBlock 中的所有工具
-            foreach (ICogTool tool in toolBlock.Tools)
-            {
-                // 直接匹配 PMAlign 工具
-                if (tool is CogPMAlignTool pmAlign)
-                {
-                    return pmAlign;
-                }
-                
-                // 如果是嵌套的 ToolBlock，递归查找
-                if (tool is CogToolBlock nestedBlock)
-                {
-                    var result = FindPMAlignToolInToolBlock(nestedBlock);
-                    if (result != null)
-                        return result;
-                }
-            }
-
-            return null;
-        }
 
         /// <summary>
         /// 扫码枪输入产品SN后自动触发作业流程 (使用 KeyPress 防冲突)
@@ -447,20 +385,15 @@ namespace Audio900
                 //    Visible = false
                 //};
 
-                var display = new CogRecordDisplay
+                var display = new LightweightImageDisplay
                 {
                     Dock = DockStyle.Fill,
                     BackColor = Color.Black,
-                    //AutoFit = true
+                    SizeMode = PictureBoxSizeMode.Zoom
                 };
-
-                
-                //panelCameraDisplay.Controls.Add(hiddenPreviewHost);
 
                 panelCameraDisplay.Controls.Add(display);
                 display.BringToFront();
-                display.HorizontalScrollBar = false;
-                display.VerticalScrollBar = false;
                 _cogDisplays.Add(display);
 
                 //_cameraService.SetWindowHandle(hiddenPreviewHost.Handle);
@@ -536,20 +469,17 @@ namespace Audio900
 
                 for (int i = 0; i < cameraCount; i++)
                 {
-                    var display = new CogRecordDisplay
+                    var display = new LightweightImageDisplay
                     {
                         Dock = DockStyle.Fill,
-                        BackColor = Color.Black
+                        BackColor = Color.Black,
+                        SizeMode = PictureBoxSizeMode.Zoom
                     };
 
                     if (i == 0)
                     {
                         // 相机0（主控相机）显示在主界面的 panelCameraDisplay 中
                         panelCameraDisplay.Controls.Add(display);
-                        
-                        // 主界面上的控件可以直接设置滚动条
-                        display.HorizontalScrollBar = false;
-                        display.VerticalScrollBar = false;
                     }
                     else
                     {
@@ -560,31 +490,17 @@ namespace Audio900
                         var displayForm = new Views.CameraDisplayForm();
                         displayForm.StartPosition = FormStartPosition.Manual;
                         
-                        // 1. 确保窗体处于普通状态才能设置位置
                         displayForm.WindowState = FormWindowState.Normal;
-                        // 2. 强制将窗体的左上角坐标设置到目标屏幕的坐标系内
                         displayForm.Location = targetScreen.WorkingArea.Location;
-                        // 3. 准确设置副屏的大小
                         displayForm.Bounds = targetScreen.Bounds;
                         
-                        // 替换内部控件为我们自己创建的
                         displayForm.Controls.Clear();
                         displayForm.Controls.Add(display);
                         
-                        // 4. 显示窗体后再最大化，这样能保证最大化发生在目标屏幕上
                         displayForm.Show();
                         displayForm.WindowState = FormWindowState.Maximized;
-
-                        // 对于弹出窗体中的 ActiveX 控件，必须等窗体显示句柄创建后，再设置滚动条属性，否则会引发 InvalidActiveXStateException
-                        try
-                        {
-                            display.HorizontalScrollBar = false;
-                            display.VerticalScrollBar = false;
-                        }
-                        catch {  }
                     }
 
-                    display.Fit(true);
                     _cogDisplays.Add(display);
                 }
 
@@ -618,10 +534,7 @@ namespace Audio900
                 if (display == null) continue;
                 try
                 {
-                    display.StaticGraphics.Clear();
-                    display.InteractiveGraphics.Clear();
-                    display.Record = null;
-                    //display.Image = null; // 图像不清空
+                    display.ClearGraphics();
                 }
                 catch
                 {
@@ -755,18 +668,7 @@ namespace Audio900
                 }
 
                 var display = _cogDisplays[e.CameraIndex];
-
-                // 检查当前显示控件里是否已有图像，如果有，且不是同一张图，则必须释放旧图
-                //if (display.Image != null && display.Image != e.Image)
-                {
-                    //var oldImage = display.Image as IDisposable;
-                    //// 先断开引用
-                    //display.Image = null;
-                    //// 再销毁内存
-                    //oldImage?.Dispose();
-                    // 赋值新图
-                    display.Image = e.Image;
-                }
+                display.SetImage(e.Image);
 
                
             }
@@ -796,7 +698,7 @@ namespace Audio900
                     LoggerService.Info($"已加载模板: {templateName}");
                     
                     // 准备AR跟踪工具（提前提取核心工具以提升性能）
-                    PrepareLiveTrackingTools();
+                    //PrepareLiveTrackingTools();
                 }
             }
             catch (Exception ex)
@@ -904,7 +806,7 @@ namespace Audio900
             _workflowService.RecordingStatusChanged += OnWorkflowRecordingStatusChanged;
             _workflowService.InspectionResultReady += OnInspectionResultReady;
             _workflowService.InOnYoloDetection += OnYoloDetection;
-            _workflowService.ToolBlockDebugReady += OnToolBlockDebugReady;
+            //_workflowService.ToolBlockDebugReady += OnToolBlockDebugReady;
             _workflowService.EnableDebugPopup = chkDebugMode.Checked;
             
             // 触发异步预加载全局深度学习模型
@@ -915,148 +817,13 @@ namespace Audio900
 
 
         /// <summary>
-        /// 用于VisionPro的调试模式
+        /// ToolBlock 调试功能已移除（阶段2）
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
-        private void OnToolBlockDebugReady(object sender, ToolBlockDebugEventArgs e)
+        private void OnToolBlockDebugReady(object sender, EventArgs e)
         {
-            if (InvokeRequired)
-            {
-                BeginInvoke(new EventHandler<ToolBlockDebugEventArgs>(OnToolBlockDebugReady), sender, e);
-                return;
-            }
-
-            if (!chkDebugMode.Checked)
-            {
-                return;
-            }
-
-            try
-            {
-                Form debugForm;
-                CogToolBlockEditV2 editControl;
-                CogRecordDisplay recordDisplay;
-                SplitContainer split;
-                TableLayoutPanel bottomPanel;
-                Button btnCloseAll;
-
-                // 检查是否已有该步骤的调试窗口
-                if (_debugWindowsByStep.TryGetValue(e.StepNumber, out debugForm) && !debugForm.IsDisposed)
-                {
-                    // 复用现有窗口，更新内容
-                    debugForm.Text = $"VisionPro调试 - Step {e.StepNumber} - {e.Message}";
-                    LoggerService.Info($"复用，{debugForm.Text}");
-                    // 找到现有控件并更新
-                    split = debugForm.Controls.OfType<TableLayoutPanel>().FirstOrDefault()?.Controls.OfType<SplitContainer>().FirstOrDefault();
-                    if (split != null)
-                    {
-                        editControl = split.Panel1.Controls.OfType<CogToolBlockEditV2>().FirstOrDefault();
-                        recordDisplay = split.Panel2.Controls.OfType<CogRecordDisplay>().FirstOrDefault();
-                        
-                        if (editControl != null)
-                        {
-                            editControl.Subject = e.ToolBlock;
-                        }
-                        
-                        if (recordDisplay != null && e.Record != null)
-                        {
-                            recordDisplay.Record = e.Record;
-                            recordDisplay.Fit(true);
-                        }
-                    }
-                    
-                    // 将窗口置前
-                    if (debugForm.WindowState == FormWindowState.Minimized)
-                    {
-                        debugForm.WindowState = FormWindowState.Maximized;
-                    }
-                    debugForm.BringToFront();
-                    debugForm.Activate();
-                }
-                else
-                {   
-                    // 创建新窗口
-                    debugForm = new Form();
-                    debugForm.Text = $"VisionPro调试 - Step {e.StepNumber} - {e.Message}";
-                    debugForm.WindowState = FormWindowState.Maximized;
-                    debugForm.StartPosition = FormStartPosition.CenterScreen;
-
-                    // 主布局：上面是SplitContainer，下面是按钮
-                    var mainLayout = new TableLayoutPanel();
-                    mainLayout.Dock = DockStyle.Fill;
-                    mainLayout.RowCount = 2;
-                    mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-                    mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50F));
-
-                    split = new SplitContainer();
-                    split.Dock = DockStyle.Fill;
-                    split.Orientation = Orientation.Vertical;
-                    split.SplitterDistance = 500;
-
-                    editControl = new CogToolBlockEditV2();
-                    editControl.Dock = DockStyle.Fill;
-                    editControl.Subject = e.ToolBlock;
-
-                    recordDisplay = new CogRecordDisplay();
-                    recordDisplay.Dock = DockStyle.Fill;
-                    recordDisplay.BackColor = Color.Black;
-                    
-
-                    split.Panel1.Controls.Add(editControl);
-                    split.Panel2.Controls.Add(recordDisplay);
-                    //recordDisplay.HorizontalScrollBar = false;
-                    //recordDisplay.VerticalScrollBar = false;
-
-                    if (e.Record != null)
-                    {
-                        recordDisplay.Record = e.Record;
-                        //recordDisplay.Fit(true);
-                    }
-
-                    // 底部按钮面板
-                    bottomPanel = new TableLayoutPanel();
-                    bottomPanel.Dock = DockStyle.Fill;
-                    bottomPanel.ColumnCount = 3;
-                    bottomPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-                    bottomPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150F));
-                    bottomPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 20F));
-
-                    btnCloseAll = new Button();
-                    btnCloseAll.Text = "关闭所有调试窗";
-                    btnCloseAll.Dock = DockStyle.Fill;
-                    btnCloseAll.Font = new Font("Microsoft Sans Serif", 10F, FontStyle.Bold);
-                    btnCloseAll.Click += (s, args) =>
-                    {
-                        CloseAllDebugWindows();
-                    };
-
-                    bottomPanel.Controls.Add(new Label(), 0, 0); // 占位
-                    bottomPanel.Controls.Add(btnCloseAll, 1, 0);
-
-                    mainLayout.Controls.Add(split, 0, 0);
-                    mainLayout.Controls.Add(bottomPanel, 0, 1);
-
-                    debugForm.Controls.Add(mainLayout);
-
-                    // 窗口关闭时清理
-                    debugForm.FormClosed += (s, args) =>
-                    {
-                        _debugWindowsByStep.Remove(e.StepNumber);
-                        _allDebugWindows.Remove(debugForm);
-                    };
-
-                    // 记录窗口
-                    _debugWindowsByStep[e.StepNumber] = debugForm;
-                    _allDebugWindows.Add(debugForm);
-
-                    debugForm.Show(this);
-                }
-            }
-            catch (Exception ex)
-            {
-                LoggerService.Error(ex, "打开VisionPro调试窗口失败");
-            }
+            // ToolBlock 功能已完全移除
         }
 
         private void CloseAllDebugWindows()
@@ -1102,16 +869,15 @@ namespace Audio900
                 {
                     var display = _cogDisplays[cameraIndex];
          
-                    // 清空旧图形
-                    display.StaticGraphics.Clear();
-                    if (display.InteractiveGraphics.Count > 0) 
-                        display.InteractiveGraphics.Clear();
-
-                    // 使用 VisionProHelper 统一处理 YOLO 过程检测的显示逻辑
-                    // 包括：ROI 框、检测框颜色判断、中心点标记
+                    // 使用轻量级显示控件的新 API
                     if (e.Predictions != null && e.Predictions.Count > 0)
                     {
-                        VisionProHelper.ApplyYoloResultsToDisplay(display, e.Image, e.Predictions, e.Step, e.IsInROI);
+                        display.SetDetectionResults(
+                            e.Predictions, 
+                            e.Step.DetectionROI, 
+                            e.Step.DetectionROIRotation, 
+                            e.Step.StepNumber.ToString(), 
+                            e.IsInROI);
                         
                         // 如果步骤通过，播放提示音
                         if (e.IsPassed && e.IsInROI)
@@ -1119,43 +885,10 @@ namespace Audio900
                             PlayBeepSound();
                         }
                     }
-                    else if (e.Image != null && display.Image != e.Image)
+                    else if (e.Image != null)
                     {
                         // 没有检测结果时，只更新图像
-                        display.Image = e.Image;
-                    }
-
-                    // 6. 绘制结果判定 (FAIL 时的红框)
-                    if (!e.IsPassed && e.Image != null)
-                    {
-                        double w = e.Image.Width;
-                        double h = e.Image.Height;
-                        double x = w / 2.0;
-                        double y = h / 2.0; 
-
-                        // 显示偏差值
-                        if (e.Results != null && TryGetResultValue(e.Results, out double diff, "ToleranceDiff"))
-                        {
-                            var diffLabel = new CogGraphicLabel();
-                            diffLabel.Text = $"偏差: {diff:F3}";
-                            diffLabel.Color = CogColorConstants.Red;
-                            diffLabel.Font = _midFont; // 使用全局 Font
-                            diffLabel.Alignment = CogGraphicLabelAlignmentConstants.BottomCenter;
-                            diffLabel.SetXYText(x, h - 100, diffLabel.Text); // 放在底部
-                            display.StaticGraphics.Add(diffLabel, "Status");
-                        }
-                    }
-                    else
-                    {
-                        // PASS 状态 
-                        // 
-                        //var passLabel = new CogGraphicLabel();
-                        //passLabel.Text = "PASS";
-                        //passLabel.Color = CogColorConstants.Green;
-                        //passLabel.Font = _bigFont;
-                        //passLabel.Alignment = CogGraphicLabelAlignmentConstants.TopRight;
-                        //passLabel.SetXYText(e.Image.Width /*/ 2.0*/, 100, "PASS");
-                        //display.StaticGraphics.Add(passLabel, "Status");
+                        display.SetImage(e.Image);
                     }
                 }
                 catch { }
@@ -1163,7 +896,7 @@ namespace Audio900
         }
 
         /// <summary>
-        /// 用于VisionPro量测
+        /// 用于VisionPro量测（阶段2会完全移除 ToolBlock 功能，暂时简化处理）
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
@@ -1186,87 +919,24 @@ namespace Audio900
                     _lastArUpdateTime[cameraIndex] = DateTime.Now;
                 }
 
-                // 严格验证相机索引，越界直接返回，不要重置为0
+                // 严格验证相机索引，越界直接返回
                 if (cameraIndex < 0 || cameraIndex >= _cogDisplays.Count)
                 {
                     LoggerService.Warn($"相机索引越界: {cameraIndex}, 显示区数量: {_cogDisplays.Count}, 步骤: {e?.Step?.StepNumber}");
                     return;
                 }
 
-                if (_cogDisplays.Count > 0)
+                if (_cogDisplays.Count > 0 && e.Image != null)
                 {
                     this.BeginInvoke(new Action(() =>
                     {
                         var display = _cogDisplays[cameraIndex];
 
                         LoggerService.Info($"显示检测结果 - 步骤{e?.Step?.StepNumber}, 相机{cameraIndex}, 结果:{(e.IsPassed ? "通过" : "失败")}");
-                        display.StaticGraphics.Clear();
-                        display.InteractiveGraphics.Clear();
-
-                        // 优先使用 Record，因为它包含所有工具的图形结果（模板匹配框、距离线等）
-                        if (e.Record != null)
-                        {
-                            display.Record = e.Record;
-                        }
-                        else if (e.Image != null)
-                        {
-                            // 只有当图像对象不同时才更新
-                            if (display.Image != e.Image)
-                            {
-                                display.Image = e.Image;
-                            }
-                        }
-
-                        if (!e.IsPassed && e.Image != null)
-                        {
-                            double x = 0;
-                            double y = 300;
-                            double toleranceDiff = 0;
-
-                            if (e.Results != null)
-                            {
-                                if (TryGetResultValue(e.Results, out double diff, "ToleranceDiff"))
-                                {
-                                    toleranceDiff = diff;
-                                }
-                            }
-
-                            //// 3. 失败红框：覆盖整张影像（略留边），圈住整个影像区
-                            //var rect = new CogRectangleAffine();
-                            //double boxWidth = e.Image.Width - 82;
-                            //double boxHeight = e.Image.Height - 58;
-                            //rect.SetCenterLengthsRotationSkew(x, y, boxWidth, boxHeight, 0, 0);
-                            //rect.Color = CogColorConstants.Red;
-                            //rect.LineWidthInScreenPixels = 5;
-                            //display.StaticGraphics.Add(rect, "FailureBox");
-                            ////display.InteractiveGraphics.Add(rect, "FailureBox",true);
-
-                            //// 4. FAIL 标签（移动到图像内部顶部居中，避免 Fit 时缩小图像）
-                            //var failLabel = new CogGraphicLabel();
-                            //failLabel.Text = "FAIL";
-                            //failLabel.Color = CogColorConstants.Red;
-                            //failLabel.Font = new Font("Microsoft Sans Serif", 48, FontStyle.Bold);
-                            //failLabel.Alignment = CogGraphicLabelAlignmentConstants.TopCenter;
-                            //failLabel.SetXYText(x, y, failLabel.Text);
-                            ////display.InteractiveGraphics.Add(failLabel, "FailureLabel", true);
-                            //display.StaticGraphics.Add(failLabel, "FailureLabel");
-
-                            // 5. 在红框中心显示超差偏差值
-                            var diffLabel = new CogGraphicLabel();
-                            diffLabel.Text = $"超出公差值：{toleranceDiff:F3}";
-                            diffLabel.Color = CogColorConstants.Red;
-                            diffLabel.Font = new Font("Microsoft Sans Serif", 32, FontStyle.Bold);
-                            diffLabel.Alignment = CogGraphicLabelAlignmentConstants.BottomLeft;
-                            diffLabel.SetXYText(x, y, diffLabel.Text);
-                            //display.InteractiveGraphics.Add(diffLabel, "ToleranceDiffLabel", true);
-                            display.StaticGraphics.Add(diffLabel, "ToleranceDiffLabel");
-                        }
-
+                        
+                        // 简化处理：仅更新图像，不绘制图形（阶段2会移除 ToolBlock 量测功能）
+                        display.SetImage(e.Image);
                     }));
-
-
-                    // 移除此处的 Fit，防止 StaticGraphics 导致图像缩小
-                    //display.Fit(true);
                 }
             }
             catch (Exception ex)
@@ -1304,31 +974,39 @@ namespace Audio900
         private void TryAutoCapture(InspectionResultEventArgs e)
         {
             if (!_autoCaptureEnabled) return;
-            if (e?.Image == null || e?.Step == null || _currentTemplate == null) return;
+            if (e?.Image == null || e?.Step == null || _currentTemplate == null || _autoDatasetExportService == null) return;
 
-            if (!e.IsPassed)
+            // 在当前后台线程上克隆 Bitmap
+            Bitmap bmp;
+            try
             {
-                // NG帧限速：同一步骤每 NG_CAPTURE_INTERVAL_MS 毫秒最多存一张
-                int key = e.Step.StepNumber;
-                lock (_ngCaptureTimestamps)
-                {
-                    if (_ngCaptureTimestamps.TryGetValue(key, out DateTime last) &&
-                        (DateTime.Now - last).TotalMilliseconds < NG_CAPTURE_INTERVAL_MS)
-                        return;
-                    _ngCaptureTimestamps[key] = DateTime.Now;
-                }
+                bmp = (Bitmap)e.Image.Clone();
+            }
+            catch (Exception ex)
+            {
+                LoggerService.Warn($"自动采图转Bitmap失败: {ex.Message}");
+                return;
             }
 
-            // 在当前后台线程上转换为Bitmap（避免ICogImage被下一轮循环覆盖/释放）
-            Bitmap bmp;
-            try { bmp = e.Image.ToBitmap(); }
-            catch { return; }
+            var decision = BuildAutoCaptureDecision(e);
+            if (decision == null)
+            {
+                bmp.Dispose();
+                return;
+            }
+
+            string fingerprint = ComputeCaptureFingerprint(bmp);
+            if (ShouldSkipDuplicateCapture(e.Step.StepNumber, fingerprint))
+            {
+                bmp.Dispose();
+                return;
+            }
 
             var template = _currentTemplate;
             var step = e.Step;
             var isPassed = e.IsPassed;
             var predictions = e.Predictions;
-            var results = e.Results;
+            var results = BuildAutoCaptureResults(e.Results, decision, fingerprint);
             var sn = Params.Instance.SN;
             var empId = Params.Instance.empNo;
 
@@ -1341,13 +1019,168 @@ namespace Audio900
                 }
                 catch (Exception ex)
                 {
-                    LoggerService.Error(ex, "自动采图保存失败");
+                    LoggerService.Error(ex, $"自动采图保存失败，步骤{step.StepNumber}，分组:{decision.BucketName}");
                 }
                 finally
                 {
                     bmp.Dispose();
                 }
             });
+        }
+
+        private Dictionary<string, double> BuildAutoCaptureResults(Dictionary<string, double> results, AutoCaptureDecision decision, string fingerprint)
+        {
+            var merged = results != null
+                ? new Dictionary<string, double>(results)
+                : new Dictionary<string, double>();
+
+            merged["AutoCaptureTopConfidence"] = decision.TopConfidence;
+            merged["AutoCaptureAvgConfidence"] = decision.AverageConfidence;
+            merged["AutoCapturePredictionCount"] = decision.PredictionCount;
+            merged["AutoCaptureQualityScore"] = decision.QualityScore;
+            merged["AutoCaptureBucketCode"] = decision.BucketCode;
+            merged["AutoCaptureIsUncertain"] = decision.IsUncertain ? 1 : 0;
+            merged["AutoCaptureDuplicateHash"] = ComputeHashScore(fingerprint);
+            return merged;
+        }
+
+        private AutoCaptureDecision BuildAutoCaptureDecision(InspectionResultEventArgs e)
+        {
+            double topConfidence = 0;
+            double avgConfidence = 0;
+            int predictionCount = e?.Predictions?.Count ?? 0;
+
+            if (predictionCount > 0)
+            {
+                topConfidence = e.Predictions.Max(p => (double)p.Confidence);
+                avgConfidence = e.Predictions.Average(p => (double)p.Confidence);
+            }
+
+            bool isUncertain = predictionCount == 0 || topConfidence < AUTO_CAPTURE_LOW_CONFIDENCE;
+            double qualityScore = Math.Max(0, Math.Min(1, (topConfidence * 0.7) + (avgConfidence * 0.3)));
+
+            string bucketName;
+            int bucketCode;
+
+            if (e.IsPassed)
+            {
+                if (topConfidence >= AUTO_CAPTURE_HIGH_CONFIDENCE)
+                {
+                    bucketName = "HighConfidence_OK";
+                    bucketCode = 0;
+                }
+                else if (topConfidence >= AUTO_CAPTURE_LOW_CONFIDENCE)
+                {
+                    bucketName = "LowConfidence_OK";
+                    bucketCode = 1;
+                }
+                else
+                {
+                    bucketName = "Uncertain_OK";
+                    bucketCode = 2;
+                    isUncertain = true;
+                }
+            }
+            else
+            {
+                if (topConfidence >= AUTO_CAPTURE_HIGH_CONFIDENCE)
+                {
+                    bucketName = "HighConfidence_NG";
+                    bucketCode = 3;
+                }
+                else if (topConfidence >= AUTO_CAPTURE_LOW_CONFIDENCE)
+                {
+                    bucketName = "LowConfidence_NG";
+                    bucketCode = 4;
+                }
+                else
+                {
+                    bucketName = "Uncertain_NG";
+                    bucketCode = 5;
+                    isUncertain = true;
+                }
+            }
+
+            return new AutoCaptureDecision
+            {
+                BucketName = bucketName,
+                BucketCode = bucketCode,
+                TopConfidence = topConfidence,
+                AverageConfidence = avgConfidence,
+                PredictionCount = predictionCount,
+                QualityScore = qualityScore,
+                IsUncertain = isUncertain
+            };
+        }
+
+        private bool ShouldSkipDuplicateCapture(int stepNumber, string fingerprint)
+        {
+            if (string.IsNullOrWhiteSpace(fingerprint))
+            {
+                return false;
+            }
+
+            lock (_autoCaptureTimestamps)
+            {
+                if (_lastCaptureFingerprints.TryGetValue(stepNumber, out string lastFingerprint) &&
+                    string.Equals(lastFingerprint, fingerprint, StringComparison.OrdinalIgnoreCase) &&
+                    _autoCaptureTimestamps.TryGetValue(stepNumber, out DateTime lastTime) &&
+                    (DateTime.Now - lastTime).TotalMilliseconds < AUTO_CAPTURE_DUPLICATE_INTERVAL_MS)
+                {
+                    return true;
+                }
+
+                _lastCaptureFingerprints[stepNumber] = fingerprint;
+                _autoCaptureTimestamps[stepNumber] = DateTime.Now;
+                return false;
+            }
+        }
+
+        private string ComputeCaptureFingerprint(Bitmap bitmap)
+        {
+            if (bitmap == null)
+            {
+                return null;
+            }
+
+            using (var thumb = new Bitmap(64, 64))
+            using (var graphics = Graphics.FromImage(thumb))
+            using (var ms = new MemoryStream())
+            using (var sha = SHA256.Create())
+            {
+                graphics.DrawImage(bitmap, 0, 0, 64, 64);
+                thumb.Save(ms, ImageFormat.Png);
+                var hash = sha.ComputeHash(ms.ToArray());
+                return Convert.ToBase64String(hash);
+            }
+        }
+
+        private double ComputeHashScore(string fingerprint)
+        {
+            if (string.IsNullOrWhiteSpace(fingerprint))
+            {
+                return 0;
+            }
+
+            int length = Math.Min(8, fingerprint.Length);
+            long raw = 0;
+            for (int i = 0; i < length; i++)
+            {
+                raw = (raw * 31) + fingerprint[i];
+            }
+
+            return Math.Abs(raw % 100000) / 100000.0;
+        }
+
+        private sealed class AutoCaptureDecision
+        {
+            public string BucketName { get; set; }
+            public int BucketCode { get; set; }
+            public double TopConfidence { get; set; }
+            public double AverageConfidence { get; set; }
+            public int PredictionCount { get; set; }
+            public double QualityScore { get; set; }
+            public bool IsUncertain { get; set; }
         }
 
         private void PlayBeepSound()

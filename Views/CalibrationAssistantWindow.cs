@@ -1,8 +1,6 @@
 using Audio900.Services;
-using Cognex.VisionPro;
-using Cognex.VisionPro.CalibFix;
-using Cognex.VisionPro.ToolBlock;
 using System;
+using System.Drawing;
 using System.Windows.Forms;
 
 namespace Audio900.Views
@@ -13,8 +11,7 @@ namespace Audio900.Views
     public partial class CalibrationAssistantWindow : Form
     {
         private CameraService _cameraService;
-        private CogCalibCheckerboardTool _calibTool;
-        private ICogImage _capturedImage;
+        private Bitmap _capturedImage;
         private int _cameraIndex;
         private Timer _previewTimer;
         
@@ -106,11 +103,8 @@ namespace Audio900.Views
         {
             try
             {
-                var liveImage = _cameraService.GetLatestFrame();
-                if (liveImage != null)
-                {
-                    cogRecordDisplay.Image = liveImage;
-                }
+                // VisionPro 预览功能已移除
+                // 标定功能暂时不开发
             }
             catch (Exception ex)
             {
@@ -134,7 +128,7 @@ namespace Audio900.Views
                     return;
                 }
                 
-                cogRecordDisplay.Image = _capturedImage;
+                // VisionPro 显示功能已移除
                 btnCalibrate.Enabled = true;
                 lblStatus.Text = "图像已抓取，请设置参数后执行标定";
                 lblStatus.ForeColor = System.Drawing.Color.Green;
@@ -165,52 +159,8 @@ namespace Audio900.Views
                 lblStatus.ForeColor = System.Drawing.Color.Blue;
                 Application.DoEvents();
                 
-                _calibTool.InputImage = _capturedImage as CogImage8Grey;
-                
-                _calibTool.Run();
-                
-                if (_calibTool.RunStatus.Result == CogToolResultConstants.Accept)
-                {
-                    double rmsError = _calibTool.Calibration.ComputedRMSError;
-                    
-                    lblRMSError.Text = $"RMS Error: {rmsError:F4} 像素";
-                    
-                    if (rmsError < 0.25)
-                    {
-                        lblRMSError.ForeColor = System.Drawing.Color.Green;
-                        lblStatus.Text = "标定成功！精度优秀（RMS < 0.25）";
-                        lblStatus.ForeColor = System.Drawing.Color.Green;
-                        btnSave.Enabled = true;
-                    }
-                    else if (rmsError < 0.5)
-                    {
-                        lblRMSError.ForeColor = System.Drawing.Color.Orange;
-                        lblStatus.Text = "标定成功，但精度一般（0.25 < RMS < 0.5）";
-                        lblStatus.ForeColor = System.Drawing.Color.Orange;
-                        btnSave.Enabled = true;
-                    }
-                    else
-                    {
-                        lblRMSError.ForeColor = System.Drawing.Color.Red;
-                        lblStatus.Text = "标定精度不足（RMS > 0.5），建议重新拍摄";
-                        lblStatus.ForeColor = System.Drawing.Color.Red;
-                        btnSave.Enabled = false;
-                    }
-                    
-                    cogRecordDisplay.Image = _calibTool.OutputImage;
-                    
-                    LoggerService.Info($"标定完成 - RMS Error: {rmsError:F4}");
-                }
-                else
-                {
-                    lblStatus.Text = $"标定失败: {_calibTool.RunStatus.Message}";
-                    lblStatus.ForeColor = System.Drawing.Color.Red;
-                    
-                    MessageBox.Show($"标定失败: {_calibTool.RunStatus.Message}\n\n可能原因：\n1. 棋盘格不清晰\n2. 参数设置错误\n3. 光照不均匀", 
-                        "标定失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    
-                    LoggerService.Warn($"标定失败: {_calibTool.RunStatus.Message}");
-                }
+                // VisionPro 标定功能已移除，标定功能暂时不开发
+                MessageBox.Show("VisionPro 标定功能已移除，标定功能将在阶段3使用 OpenCV 重新实现", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
@@ -237,9 +187,8 @@ namespace Audio900.Views
                 
                 string calibFile = System.IO.Path.Combine(calibFolder, $"Camera{_cameraIndex}_Calibration.vpp");
                 
-                CogSerializer.SaveObjectToFile(_calibTool, calibFile);
-                
-                double rmsError = _calibTool.Calibration.ComputedRMSError;
+                // VisionPro 标定保存功能已移除
+                double rmsError = 0;
                 
                 MessageBox.Show(
                     $"标定文件已保存:\n{calibFile}\n\n" +
@@ -265,7 +214,7 @@ namespace Audio900.Views
             {
                 _previewTimer?.Stop();
                 _previewTimer?.Dispose();
-                _calibTool?.Dispose();
+                // VisionPro 标定工具已移除
                 components?.Dispose();
             }
             base.Dispose(disposing);

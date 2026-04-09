@@ -1,4 +1,3 @@
-using Cognex.VisionPro;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -222,7 +221,7 @@ namespace Audio900.Models
         }
 
         // 存储拍摄的图像
-        public ICogImage CapturedImage { get; set; }
+        public Bitmap CapturedImage { get; set; }
 
         // 用于WinForms显示的图像源 (改为Image类型)
         private Image _imageSource;
@@ -317,7 +316,7 @@ namespace Audio900.Models
         }
 
         // 模板图像
-        public ICogImage TemplateImage { get; set; }
+        public Bitmap TemplateImage { get; set; }
        
         public event PropertyChangedEventHandler PropertyChanged;
 

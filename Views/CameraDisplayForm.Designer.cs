@@ -31,8 +31,7 @@ namespace Audio900.Views
         /// </summary>
         private void InitializeComponent()
         {
-            this.RecordDisplay = new Cognex.VisionPro.CogRecordDisplay();
-            ((System.ComponentModel.ISupportInitialize)(this.RecordDisplay)).BeginInit();
+            this.RecordDisplay = new Audio900.Controls.LightweightImageDisplay();
             this.SuspendLayout();
             // 
             // RecordDisplay
@@ -53,12 +52,11 @@ namespace Audio900.Views
             this.Controls.Add(this.RecordDisplay);
             this.Name = "CameraDisplayForm";
             this.Text = "相机独立显示屏";
-            ((System.ComponentModel.ISupportInitialize)(this.RecordDisplay)).EndInit();
             this.ResumeLayout(false);
 
         }
 
         #endregion
-        private Cognex.VisionPro.CogRecordDisplay RecordDisplay;
+        private Audio900.Controls.LightweightImageDisplay RecordDisplay;
     }
 }

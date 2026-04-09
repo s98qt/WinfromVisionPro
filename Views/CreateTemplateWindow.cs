@@ -6,8 +6,6 @@ using System.Linq;
 using System.Windows.Forms;
 using Audio900.Models;
 using Audio900.Services;
-using Cognex.VisionPro;
-using Cognex.VisionPro.ImageFile;
 
 namespace Audio900.Views
 {
@@ -77,9 +75,9 @@ namespace Audio900.Views
                 else if (step.CapturedImage != null)
                 {
                      try {
-                         using(var bmp = step.CapturedImage.ToBitmap())
+                         //using(var bmp = step.CapturedImage.ToBitmap())
                          {
-                             newStep.ImageSource = new Bitmap(bmp);
+                             newStep.ImageSource = step.CapturedImage;
                          }
                      } catch {}
                 }
@@ -99,14 +97,8 @@ namespace Audio900.Views
                     if (File.Exists(imgPath))
                     {
                         try {
-                            CogImageFileTool imgTool = new CogImageFileTool();
-                            imgTool.Operator.Open(imgPath, CogImageFileModeConstants.Read);
-                            imgTool.Run();
-                            newStep.CapturedImage = imgTool.OutputImage;
-                             using(var bmp = newStep.CapturedImage.ToBitmap())
-                             {
-                                newStep.ImageSource = new Bitmap(bmp);
-                             }
+                            newStep.CapturedImage = new Bitmap(imgPath);
+                            newStep.ImageSource = new Bitmap(imgPath);
                         } catch {}
                     }
                 }
@@ -214,10 +206,7 @@ namespace Audio900.Views
                     if (step.CapturedImage != null)
                     {
                         try {
-                            CogImageFileTool saveTool = new CogImageFileTool();
-                            saveTool.InputImage = step.CapturedImage;
-                            saveTool.Operator.Open(Path.Combine(_templatePath, $"step{step.StepNumber}_image.bmp"), CogImageFileModeConstants.Write);
-                            saveTool.Run();
+                            step.CapturedImage.Save(Path.Combine(_templatePath, $"step{step.StepNumber}_image.bmp"), System.Drawing.Imaging.ImageFormat.Bmp);
                         } catch(Exception ex) {
                             MessageBox.Show($"保存步骤{step.StepNumber}图片失败: {ex.Message}");
                         }

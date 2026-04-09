@@ -1,8 +1,6 @@
 using System;
 using System.Drawing;
 using System.Windows.Forms;
-using Cognex.VisionPro;
-using Cognex.VisionPro.Display;
 
 namespace Audio900.Views
 {
@@ -11,123 +9,63 @@ namespace Audio900.Views
         public RectangleF SelectedROI { get; private set; }
         public double SelectedROIRotation { get; private set; }
         
-        private CogRecordDisplay _display;
-        private ICogImage _image;
-        private CogRectangleAffine _roiRect;
+        private PictureBox _display;
+        private Bitmap _image;
 
-        public SetROIWindow(ICogImage image, RectangleF existingROI = default, double existingRotation = 0)
+        public SetROIWindow(Bitmap image, RectangleF existingROI = default, double existingRotation = 0)
         {
             InitializeComponent();
             if (image != null)
             {
-                _image = image.CopyBase(CogImageCopyModeConstants.CopyPixels);
+                _image = (Bitmap)image.Clone();
             }
 
             SelectedROI = existingROI;
             SelectedROIRotation = existingRotation;
             
             SetupDisplay();
+            
+            MessageBox.Show("VisionPro ROI 设置功能已移除，请手动输入 ROI 参数", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
 
-            if (_image != null && _image.Allocated)
+            if (_image != null)
             {
                 _display.Image = _image;
-                _display.Fit(true);
-                
-                // 图像加载完成后创建交互式 ROI
-                CreateInteractiveROI();
             }
         }
 
         private void SetupDisplay()
         {
-            _display = new CogRecordDisplay();
+            _display = new PictureBox();
             _display.Dock = DockStyle.Fill;
+            _display.SizeMode = PictureBoxSizeMode.Zoom;
             
             panelDisplay.Controls.Add(_display);
             
-            lblStatus.Text = "请调整检测区域的位置、大小和角度";
+            lblStatus.Text = "VisionPro 交互式 ROI 设置已移除";
         }
 
-        /// <summary>
-        /// 创建交互式 ROI 矩形
-        /// </summary>
         private void CreateInteractiveROI()
         {
-            if (_image == null) return;
-            
-            _display.InteractiveGraphics.Clear();
-            
-            _roiRect = new CogRectangleAffine();
-            
-            // 如果有已存在的 ROI，使用它；否则在图像中心创建默认 ROI
-            if (SelectedROI.Width > 0 && SelectedROI.Height > 0)
-            {
-                double centerX = SelectedROI.X + SelectedROI.Width / 2.0;
-                double centerY = SelectedROI.Y + SelectedROI.Height / 2.0;
-                _roiRect.SetCenterLengthsRotationSkew(centerX, centerY, SelectedROI.Width, SelectedROI.Height, SelectedROIRotation, 0);
-            }
-            else
-            {
-                // 在图像中心创建默认大小的 ROI
-                double centerX = _image.Width / 2.0;
-                double centerY = _image.Height / 2.0;
-                double defaultSize = Math.Min(_image.Width, _image.Height) * 0.3;
-                _roiRect.SetCenterLengthsRotationSkew(centerX, centerY, defaultSize, defaultSize, 0, 0);
-            }
-            
-            // 设置交互属性
-            _roiRect.Interactive = true;
-            _roiRect.GraphicDOFEnable = CogRectangleAffineDOFConstants.All;  // 允许所有自由度（移动、缩放、旋转）
-            _roiRect.Color = CogColorConstants.Yellow;
-            _roiRect.LineWidthInScreenPixels = 2;
-            _roiRect.SelectedLineWidthInScreenPixels = 3;
-            
-            _display.InteractiveGraphics.Add(_roiRect, "ROI", true);
-            
-            UpdateROIStatus();
+            // VisionPro 交互式 ROI 功能已移除
         }
 
-        /// <summary>
-        /// 更新 ROI 状态显示
-        /// </summary>
         private void UpdateROIStatus()
         {
-            if (_roiRect == null) return;
-            
-            double centerX = _roiRect.CenterX;
-            double centerY = _roiRect.CenterY;
-            double width = _roiRect.SideXLength;
-            double height = _roiRect.SideYLength;
-            double angleDeg = _roiRect.Rotation * 180.0 / Math.PI;
-            
-            lblStatus.Text = $"中心: ({centerX:F0}, {centerY:F0}), 宽高: {width:F0}x{height:F0}, 角度: {angleDeg:F1}°";
+            if (SelectedROI.Width > 0 && SelectedROI.Height > 0)
+            {
+                double angleDeg = SelectedROIRotation * 180.0 / Math.PI;
+                lblStatus.Text = $"ROI: ({SelectedROI.X:F0}, {SelectedROI.Y:F0}), 宽高: {SelectedROI.Width:F0}x{SelectedROI.Height:F0}, 角度: {angleDeg:F1}°";
+            }
         }
 
         private void btnConfirm_Click(object sender, EventArgs e)
         {
-            if (_roiRect == null)
-            {
-                MessageBox.Show("请先设置检测区域！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-            
-            // 从交互式矩形提取最终的 ROI 数据
-            double centerX = _roiRect.CenterX;
-            double centerY = _roiRect.CenterY;
-            double width = _roiRect.SideXLength;
-            double height = _roiRect.SideYLength;
-            
-            float x = (float)(centerX - width / 2.0);
-            float y = (float)(centerY - height / 2.0);
-            
-            SelectedROI = new RectangleF(x, y, (float)width, (float)height);
-            SelectedROIRotation = _roiRect.Rotation;
-            
+            // VisionPro 交互式 ROI 已移除，直接返回
             this.DialogResult = DialogResult.OK;
             this.Close();
         }

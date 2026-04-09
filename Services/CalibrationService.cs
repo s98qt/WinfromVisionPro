@@ -1,8 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Cognex.VisionPro;
-using Cognex.VisionPro.CalibFix;
+using System.Drawing;
 
 namespace Audio900.Services
 {
@@ -12,8 +11,8 @@ namespace Audio900.Services
     /// </summary>
     public class CalibrationService : IDisposable
     {
-        private Dictionary<int, CogCalibCheckerboardTool> _calibrations = new Dictionary<int, CogCalibCheckerboardTool>();
-        private Dictionary<int, CogCalibNPointToNPointTool> _calibApplyTools = new Dictionary<int, CogCalibNPointToNPointTool>();
+        // VisionPro 标定已移除，阶段3将使用 OpenCV 重新实现
+        private Dictionary<int, bool> _calibrations = new Dictionary<int, bool>();
         private const string CALIB_FOLDER = "Calibrations";
         
         /// <summary>
@@ -27,33 +26,8 @@ namespace Audio900.Services
                 return;
             }
             
-            var files = Directory.GetFiles(CALIB_FOLDER, "Camera*_Calibration.vpp");
-            
-            foreach (var file in files)
-            {
-                try
-                {
-                    string fileName = Path.GetFileNameWithoutExtension(file);
-                    string indexStr = fileName.Replace("Camera", "").Replace("_Calibration", "");
-                    
-                    if (int.TryParse(indexStr, out int cameraIndex))
-                    {
-                        var calibTool = CogSerializer.LoadObjectFromFile(file) as CogCalibCheckerboardTool;
-                        
-                        if (calibTool != null && calibTool.Calibration != null)
-                        {
-                            _calibrations[cameraIndex] = calibTool;
-                            
-                            double rmsError = calibTool.Calibration.ComputedRMSError;
-                            LoggerService.Info($"相机{cameraIndex}标定已加载 - RMS Error: {rmsError:F4} 像素");
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    LoggerService.Error(ex, $"加载标定文件失败: {file}");
-                }
-            }
+            // VisionPro 标定功能已移除
+            LoggerService.Info("标定功能已移除，将在阶段3使用 OpenCV 重新实现");
         }
         
         /// <summary>
@@ -61,8 +35,7 @@ namespace Audio900.Services
         /// </summary>
         public bool IsCalibrated(int cameraIndex)
         {
-            return _calibrations.ContainsKey(cameraIndex) && 
-                   _calibrations[cameraIndex].Calibration != null;
+            return _calibrations.ContainsKey(cameraIndex) && _calibrations[cameraIndex];
         }
         
         /// <summary>
@@ -85,51 +58,13 @@ namespace Audio900.Services
         /// <param name="image">原始图像（像素坐标）</param>
         /// <param name="cameraIndex">相机索引</param>
         /// <returns>关联了标定信息的图像</returns>
-        public ICogImage ApplyCalibration(ICogImage image, int cameraIndex)
+        public Bitmap ApplyCalibration(Bitmap image, int cameraIndex)
         {
             if (image == null)
                 return null;
                 
-            if (!IsCalibrated(cameraIndex))
-            {
-                LoggerService.Debug($"相机{cameraIndex}未标定，返回原始图像");
-                return image;
-            }
-            
-            try
-            {
-                var calibration = _calibrations[cameraIndex].Calibration;
-
-                // VisionPro 9.0 CR2: 使用 AddSpace 方法将标定添加到坐标空间树
-                // 标准流程：加载 Transform -> AddSpace 到图片的 CoordinateSpaceTree -> 后续工具自动使用
-
-                // 从标定对象获取变换矩阵（从标定空间到像素空间的变换）
-                ICogTransform2D transform = calibration.GetComputedUncalibratedFromCalibratedTransform();
-
-                // 定义标定空间名称（自定义）
-                string calibSpaceName = $"Camera{cameraIndex}_CalibrationSpace";
-
-                // 将标定空间添加到坐标树（父空间是像素空间 "#"）
-                image.CoordinateSpaceTree.AddSpace(
-                    "#",                                    // 父空间名称（像素空间）
-                    calibSpaceName,                         // 新空间名称（标定空间）
-                    transform,                              // 变换矩阵（从标定空间到像素空间）
-                    true,                                   // copyTransform
-                    CogAddSpaceConstants.IgnoreDuplicate    // 如果已存在则忽略
-                );
-
-                // 设置当前选中的坐标空间为标定空间
-                image.SelectedSpaceName = calibSpaceName;
-
-                LoggerService.Debug($"相机{cameraIndex}标定已应用 - 坐标空间: {calibSpaceName}");
-
-                return image;
-            }
-            catch (Exception ex)
-            {
-                LoggerService.Error(ex, $"应用标定失败 - 相机{cameraIndex}");
-                return image;
-            }
+            // VisionPro 标定功能已移除，直接返回原始图像
+            return image;
         }
         
         /// <summary>
@@ -137,10 +72,8 @@ namespace Audio900.Services
         /// </summary>
         public double GetRMSError(int cameraIndex)
         {
-            if (!IsCalibrated(cameraIndex))
-                return -1;
-            
-            return _calibrations[cameraIndex].Calibration.ComputedRMSError;
+            // VisionPro 标定功能已移除
+            return -1;
         }
              
         /// <summary>
@@ -164,9 +97,7 @@ namespace Audio900.Services
         {
             if (_calibrations.ContainsKey(cameraIndex))
             {
-                _calibrations[cameraIndex]?.Dispose();
                 _calibrations.Remove(cameraIndex);
-                
                 LoggerService.Info($"相机{cameraIndex}标定已清除");
             }
         }
@@ -189,10 +120,6 @@ namespace Audio900.Services
         
         public void Dispose()
         {
-            foreach (var calib in _calibrations.Values)
-            {
-                calib?.Dispose();
-            }
             _calibrations.Clear();
         }
     }

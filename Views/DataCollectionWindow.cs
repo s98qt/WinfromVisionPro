@@ -6,7 +6,6 @@ using System.IO;
 using System.Windows.Forms;
 using Audio900.Services;
 using Audio.Services;
-using Cognex.VisionPro;
 
 namespace Audio900.Views
 {
@@ -251,7 +250,7 @@ namespace Audio900.Views
                 }
 
                 // 从相机采集图像
-                ICogImage image = null;
+                Bitmap image = null;
                 
                 if (_cameraService.IsMultiCameraMode)
                 {
@@ -278,7 +277,7 @@ namespace Audio900.Views
                     string fullPath = Path.Combine(_savePath, filename);
 
                     // 保存图片
-                    using (var bmp = image.ToBitmap())
+                    using (var bmp = image)
                     {
                         bmp.Save(fullPath, ImageFormat.Bmp);
                     }

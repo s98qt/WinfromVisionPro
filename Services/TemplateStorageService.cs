@@ -1,6 +1,4 @@
 using Audio900.Models;
-using Cognex.VisionPro;
-using Cognex.VisionPro.ImageFile;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -91,14 +89,14 @@ namespace Audio900.Services
                     if (step.CapturedImage != null)
                     {
                         string capturedImagePath = Path.Combine(stepFolder, "captured.bmp");
-                        SaveICogImageAsImage(step.CapturedImage, capturedImagePath);
+                        SaveBitmapAsImage(step.CapturedImage, capturedImagePath);
                     }
 
                     // 保存模板图像
                     if (step.TemplateImage != null)
                     {
                         string templateImagePath = Path.Combine(stepFolder, "template.bmp");
-                        SaveICogImageAsImage(step.TemplateImage, templateImagePath);
+                        SaveBitmapAsImage(step.TemplateImage, templateImagePath);
                     }
 
                     if (!string.IsNullOrEmpty(step.ToolBlockPath) && File.Exists(step.ToolBlockPath))
@@ -208,7 +206,7 @@ namespace Audio900.Services
                     string capturedImagePath = Path.Combine(stepFolder, "captured.bmp");
                     if (File.Exists(capturedImagePath))
                     {
-                        step.CapturedImage = LoadImageAsICogImage(capturedImagePath);
+                        step.CapturedImage = LoadImageAsBitmap(capturedImagePath);
                         step.ImageSource = LoadImageAsDrawingImage(capturedImagePath);
                     }
 
@@ -216,7 +214,7 @@ namespace Audio900.Services
                     string templateImagePath = Path.Combine(stepFolder, "template.bmp");
                     if (File.Exists(templateImagePath))
                     {
-                        step.TemplateImage = LoadImageAsICogImage(templateImagePath);
+                        step.TemplateImage = LoadImageAsBitmap(templateImagePath);
                     }
 
                     template.Steps.Add(step);
@@ -278,18 +276,14 @@ namespace Audio900.Services
         }
 
         /// <summary>
-        /// 保存 ICogImage 为图像文件
+        /// 保存 Bitmap 为图像文件
         /// </summary>
-        private void SaveICogImageAsImage(ICogImage image, string filePath)
+        private void SaveBitmapAsImage(Bitmap image, string filePath)
         {
             try
             {
                 if (image == null) return;
-
-                using (var bitmap = image.ToBitmap())
-                {
-                    bitmap.Save(filePath, ImageFormat.Bmp);
-                }
+                image.Save(filePath, ImageFormat.Bmp);
             }
             catch (Exception ex)
             {
@@ -298,23 +292,20 @@ namespace Audio900.Services
         }
 
         /// <summary>
-        /// 加载图像文件为 ICogImage
+        /// 加载图像文件为 Bitmap
         /// </summary>
-        private ICogImage LoadImageAsICogImage(string filePath)
+        private Bitmap LoadImageAsBitmap(string filePath)
         {
             try
             {
                 if (!File.Exists(filePath))
                     return null;
 
-                CogImageFileTool fileTool = new CogImageFileTool();
-                fileTool.Operator.Open(filePath, CogImageFileModeConstants.Read);
-                fileTool.Run();
-                return fileTool.OutputImage;
+                return new Bitmap(filePath);
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, $"加载ICogImage失败: {filePath}");
+                _logger.Error(ex, $"加载Bitmap失败: {filePath}");
                 return null;
             }
         }

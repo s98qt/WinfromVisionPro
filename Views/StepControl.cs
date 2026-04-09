@@ -1,9 +1,5 @@
 using Audio900.Models;
 using Audio900.Services;
-using Cognex.VisionPro;
-using Cognex.VisionPro.ImageFile;
-using Cognex.VisionPro.ImageProcessing;
-using Cognex.VisionPro.ToolBlock;
 using System;
 using System.Drawing;
 using System.IO;
@@ -227,7 +223,7 @@ namespace Audio900.Views
 
         private async void btnCapture_Click(object sender, EventArgs e)
         {
-            ICogImage snapshot = null;
+            Bitmap snapshot = null;
             bool isOfflineMode = false;
             
             try 
@@ -274,10 +270,7 @@ namespace Audio900.Views
                         ofd.Filter = "Image Files|*.bmp;*.jpg;*.png;*.tif";
                         if (ofd.ShowDialog() == DialogResult.OK)
                         {
-                            CogImageFileTool tool = new CogImageFileTool();
-                            tool.Operator.Open(ofd.FileName, CogImageFileModeConstants.Read);
-                            tool.Run();
-                            snapshot = tool.OutputImage;
+                            snapshot = new Bitmap(ofd.FileName);
                         }
                         else return;
                     }
@@ -285,27 +278,8 @@ namespace Audio900.Views
                 
                 if (snapshot != null)
                 {
-                    if (!(snapshot is CogImage8Grey))
-                    {
-                        try
-                        {
-                            CogImageConvertTool convertTool = new CogImageConvertTool();
-                            convertTool.InputImage = snapshot;
-                            convertTool.Run();
-                            if (convertTool.OutputImage != null)
-                            {
-                                snapshot = convertTool.OutputImage as CogImage8Grey;
-                            }
-                        }
-                        catch {  }
-                    }
-
-                    Step.CapturedImage = snapshot;
-                    
-                    using(var bmp = snapshot.ToBitmap())
-                    {
-                        Step.ImageSource = new Bitmap(bmp);
-                    }
+                    Step.CapturedImage = (Bitmap)snapshot.Clone();
+                    Step.ImageSource = (Bitmap)snapshot.Clone();
                     pictureBoxPreview.Image = Step.ImageSource;
                     
                     MessageBox.Show($"采集成功！模式: {(isOfflineMode ? "离线" : "相机")}");
@@ -331,120 +305,7 @@ namespace Audio900.Views
             
             try
             {
-                if (string.IsNullOrEmpty(_templateBasePath))
-                {
-                    MessageBox.Show("请先在顶部输入模板名称，以确定保存路径。");
-                    return;
-                }
-
-                string vppPath = Step.ToolBlockPath;
-                string stepFolder = Path.Combine(_templateBasePath, $"Step{Step.StepNumber}");
-                if (!Directory.Exists(stepFolder)) Directory.CreateDirectory(stepFolder);
-                
-                if (string.IsNullOrEmpty(vppPath))
-                {
-                     vppPath = Path.Combine(stepFolder, "task.vpp");
-                     Step.ToolBlockPath = vppPath;
-                }
-                
-                CogToolBlock toolBlock = null;
-                if (File.Exists(vppPath))
-                {
-                    try 
-                    {
-                        toolBlock = CogSerializer.LoadObjectFromFile(vppPath) as CogToolBlock;
-                    } 
-                    catch { }
-                }
-                
-                if (toolBlock == null)
-                {
-                    toolBlock = new CogToolBlock();
-                    toolBlock.Name = $"Step{Step.StepNumber}_Task";
-                }
-                
-                if (Step.CapturedImage != null)
-                {
-                    if (!toolBlock.Inputs.Contains("InputImage"))
-                        toolBlock.Inputs.Add(new CogToolBlockTerminal("InputImage", typeof(ICogImage)));
-                        
-                    toolBlock.Inputs["InputImage"].Value = Step.CapturedImage;
-                }
-                
-                using (Form editorForm = new Form())
-                {
-                    editorForm.Text = $"编辑步骤 {Step.StepNumber}";
-                    editorForm.WindowState = FormWindowState.Maximized;
-                    
-                    var editControl = new CogToolBlockEditV2();
-                    editControl.Dock = DockStyle.Fill;
-                    editControl.Subject = toolBlock;
-                    editorForm.Controls.Add(editControl);
-                    
-                    editorForm.FormClosed += (s, args) => 
-                    {
-                         CogSerializer.SaveObjectToFile(toolBlock, vppPath);
-                         editControl.Dispose();
-                         
-                         try
-                         {
-                             // 运行一次以获取最新值（标准值）
-                             toolBlock.Run();
-                             
-                             // 收集所有有效的输出参数名称
-                             var validOutputNames = new System.Collections.Generic.HashSet<string>();
-
-                             foreach (CogToolBlockTerminal terminal in toolBlock.Outputs)
-                             {
-                                 if (terminal.Value == null) continue;
-                                 
-                                 // 只处理数值类型的输出
-                                 if (double.TryParse(terminal.Value.ToString(), out double val))
-                                 {
-                                     validOutputNames.Add(terminal.Name);
-                                     
-                                     var existingParam = Step.Parameters.FirstOrDefault(p => p.Name == terminal.Name);
-                                     if (existingParam != null)
-                                     {
-                                         // 更新标准值
-                                         existingParam.StandardValue = val;
-                                     }
-                                     else
-                                     {
-                                         // 自动添加新参数
-                                         Step.Parameters.Add(new StepParameter
-                                         {
-                                             Id = Step.Parameters.Count + 1,
-                                             Name = terminal.Name,
-                                             IsEnabled = true,
-                                             StandardValue = val,
-                                             Tolerance = 0.5 // 默认公差
-                                         });
-                                     }
-                                 }
-                             }
-
-                             // 删除不再存在的参数（反向遍历删除）
-                             for (int i = Step.Parameters.Count - 1; i >= 0; i--)
-                             {
-                                 if (!validOutputNames.Contains(Step.Parameters[i].Name))
-                                 {
-                                     Step.Parameters.RemoveAt(i);
-                                 }
-                             }
-
-                             dgvParams.DataSource = null;
-                             dgvParams.DataSource = Step.Parameters;
-                             dgvParams.Refresh();
-                         }
-                         catch (Exception ex)
-                         {
-                             MessageBox.Show($"同步参数失败: {ex.Message}");
-                         }
-                    };
-                    
-                    editorForm.ShowDialog();
-                }
+                MessageBox.Show("VisionPro ToolBlock 功能已移除，请使用深度学习模式", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch(Exception ex)
             {

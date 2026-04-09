@@ -1,9 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using Cognex.VisionPro;
-using Cognex.VisionPro.Implementation;
-using Cognex.VisionPro.Display;
 
 namespace Audio900.Services
 {
@@ -62,119 +59,12 @@ namespace Audio900.Services
         }
 
         /// <summary>
-        /// 将 YOLO 预测结果直接应用到 CogRecordDisplay 的 StaticGraphics，用于过程检测的 AR 实时显示
+        /// VisionPro 显示功能已移除，此方法已被 LightweightImageDisplay 替代
         /// </summary>
-        /// <param name="display">显示控件</param>
-        /// <param name="image">图像</param>
-        /// <param name="predictions">YOLO 预测结果</param>
-        /// <param name="step">当前步骤（用于获取 ROI 信息）</param>
-        /// <param name="isInROI">检测物体是否在 ROI 内</param>
-        public static void ApplyYoloResultsToDisplay(CogRecordDisplay display, ICogImage image, List<YoloOBBPrediction> predictions, Audio900.Models.WorkStep step = null, bool isInROI = false)
+        [Obsolete("已被 LightweightImageDisplay 替代")]
+        public static void ApplyYoloResultsToDisplay_DEPRECATED()
         {
-            if (display == null) return;
-
-            // 1. 清空现有的静态图形
-            display.StaticGraphics.Clear();
-
-            // 2. 设置图像
-            if (image != null)
-            {
-                display.Image = image;
-            }
-
-            // 3. 如果启用了过程检测，绘制 ROI 框（白色细框，不可交互）
-            if (step != null && step.EnableProcessDetection && step.DetectionROI.Width > 0)
-            {
-                var roiRect = new CogRectangleAffine();
-                double roiCenterX = step.DetectionROI.X + step.DetectionROI.Width / 2.0;
-                double roiCenterY = step.DetectionROI.Y + step.DetectionROI.Height / 2.0;
-
-                // 使用保存的旋转角度
-                roiRect.SetCenterLengthsRotationSkew(
-                    roiCenterX, roiCenterY,
-                    step.DetectionROI.Width, step.DetectionROI.Height,
-                    step.DetectionROIRotation, 0);
-                roiRect.Color = CogColorConstants.White;
-                roiRect.LineWidthInScreenPixels = 2;
-                roiRect.Interactive = false;  // 运行模式：不可交互
-                display.StaticGraphics.Add(roiRect, "ROI");
-
-                // 添加步骤编号标签
-                var stepLabel = new CogGraphicLabel();
-                stepLabel.SetXYText(roiCenterX + step.DetectionROI.Width / 2.0 + 10,
-                                   roiCenterY - step.DetectionROI.Height / 2.0,
-                                   step.StepNumber.ToString());
-                stepLabel.Color = CogColorConstants.White;
-                stepLabel.Font = new Font("Arial", 16, FontStyle.Bold);
-                stepLabel.Alignment = CogGraphicLabelAlignmentConstants.BaselineLeft;
-                display.StaticGraphics.Add(stepLabel, "StepNumber");
-            }
-
-            // 4. 绘制 YOLO 检测框（只显示在 ROI 内的检测框，支持旋转）
-            if (predictions != null && predictions.Count > 0)
-            {
-                foreach (var pred in predictions)
-                {
-                    // 从 OBB 的 4 个角点计算中心点、宽度、高度
-                    var (centerX, centerY, width, height) = CalculateOBBGeometry(pred.RotatedBox);
-
-                    // 为每个检测框单独判断是否在 ROI 内
-                    bool currentBoxInROI = false;
-                    if (step != null && step.EnableProcessDetection && step.DetectionROI.Width > 0)
-                    {
-                        currentBoxInROI = IsPointInRotatedROI(
-                            (float)centerX, (float)centerY, 
-                            step.DetectionROI, step.DetectionROIRotation);
-                    }
-
-                    CogColorConstants boxColor = CogColorConstants.Green; // 默认颜色
-
-                    if (step != null && step.EnableProcessDetection)
-                    {
-                        int expectedClassId = step.StepNumber - 1; // 步骤顺序和识别序号一一对应
-                        
-                        // 判定条件：中心点在 ROI 内 并且 识别到的类别与当前步骤一一对应
-                        if (currentBoxInROI && pred.ClassId == expectedClassId )
-                        {
-                            boxColor = CogColorConstants.Green; // 动作标准
-                        }
-                        else
-                        {
-                            boxColor = CogColorConstants.Red; // 动作不标准 或 在ROI外
-                        }
-                    }
-
-                    // 绘制识别框（支持旋转角度）
-                    var rect = new CogRectangleAffine();
-                    // 将角度从度转换为弧度
-                    double rotationRadians = pred.Angle * Math.PI / 180.0;
-                    rect.SetCenterLengthsRotationSkew(centerX, centerY,
-                        width, height, 
-                        rotationRadians, 0); // 使用 YOLO OBB 输出的旋转角度
-                    rect.Color = boxColor;
-                    rect.LineWidthInScreenPixels = 3;
-                    rect.Interactive = false;
-                    display.StaticGraphics.Add(rect, "DetectionBox");
-
-                    // 绘制中心点（红色小点）
-                    var centerDot = new CogCircle();
-                    centerDot.CenterX = centerX;
-                    centerDot.CenterY = centerY;
-                    centerDot.Radius = 5;
-                    centerDot.Color = CogColorConstants.Red;
-                    centerDot.LineWidthInScreenPixels = 2;
-                    display.StaticGraphics.Add(centerDot, "CenterPoint");
-
-                    // 添加标签（显示在检测框上方）
-                    var label = new CogGraphicLabel();
-                    label.SetXYText(centerX, centerY - height / 2.0 - 20,
-                        $"{pred.Label} : {pred.Confidence:P0} ({pred.Angle:F1}°)");
-                    label.Color = boxColor;
-                    label.Font = new Font("Arial", 10, FontStyle.Bold);
-                    label.Alignment = CogGraphicLabelAlignmentConstants.BaselineLeft;
-                    display.StaticGraphics.Add(label, "DetectionLabel");
-                }
-            }
+            // VisionPro 显示功能已完全移除
         }
     }
 }

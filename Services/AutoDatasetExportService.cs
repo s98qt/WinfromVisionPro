@@ -1,5 +1,4 @@
 using Audio900.Models;
-using Cognex.VisionPro;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -23,7 +22,7 @@ namespace Audio900.Services
                 : rootFolder;
         }
 
-        public string ExportStepResult(WorkTemplate template, WorkStep step, ICogImage image, bool isPassed, string sn, string employeeId, List<YoloOBBPrediction> predictions, Dictionary<string, double> results)
+        public string ExportStepResult(WorkTemplate template, WorkStep step, Bitmap image, bool isPassed, string sn, string employeeId, List<YoloOBBPrediction> predictions, Dictionary<string, double> results)
         {
             if (template == null || step == null || image == null)
             {
@@ -36,13 +35,15 @@ namespace Audio900.Services
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
             string safeSn = string.IsNullOrWhiteSpace(sn) ? "NOSN" : SanitizePathSegment(sn);
             string baseFileName = $"{timestamp}_SN_{safeSn}_STEP_{step.StepNumber}_CAM_{step.CameraIndex}";
+            string captureBucketName = ResolveCaptureBucketName(results, isPassed);
 
             string baseFolder = Path.Combine(
                 _rootFolder,
                 templateName,
                 $"Step_{step.StepNumber:D2}_{stepName}",
                 $"Camera_{step.CameraIndex}",
-                resultFolderName);
+                resultFolderName,
+                captureBucketName);
 
             string metaFolder = Path.Combine(baseFolder, "meta");
 
@@ -73,6 +74,12 @@ namespace Audio900.Services
                 ProductSN = sn,
                 EmployeeId = employeeId,
                 Result = isPassed ? "OK" : "NG",
+                CaptureBucket = captureBucketName,
+                TopConfidence = GetResultValue(results, "AutoCaptureTopConfidence"),
+                AverageConfidence = GetResultValue(results, "AutoCaptureAvgConfidence"),
+                PredictionCount = (int)Math.Round(GetResultValue(results, "AutoCapturePredictionCount")),
+                QualityScore = GetResultValue(results, "AutoCaptureQualityScore"),
+                IsUncertain = GetResultValue(results, "AutoCaptureIsUncertain") >= 0.5,
                 Timestamp = DateTime.Now,
                 ImagePath = imagePath,
                 LabelPath = labelPath,
@@ -91,15 +98,12 @@ namespace Audio900.Services
             return imagePath;
         }
 
-        private void SaveImage(ICogImage image, string imagePath)
+        private void SaveImage(Bitmap image, string imagePath)
         {
-            using (var bitmap = image.ToBitmap())
-            {
-                bitmap.Save(imagePath, ImageFormat.Jpeg);
-            }
+            image.Save(imagePath, System.Drawing.Imaging.ImageFormat.Jpeg);
         }
 
-        private void SaveLabels(string labelPath, ICogImage image, List<YoloOBBPrediction> predictions)
+        private void SaveLabels(string labelPath, Bitmap image, List<YoloOBBPrediction> predictions)
         {
             SaveLabels(labelPath, image.Width, image.Height, predictions);
         }
@@ -301,6 +305,37 @@ namespace Audio900.Services
             return string.IsNullOrWhiteSpace(cleaned) ? "Unknown" : cleaned;
         }
 
+        private static string ResolveCaptureBucketName(Dictionary<string, double> results, bool isPassed)
+        {
+            int bucketCode = (int)Math.Round(GetResultValue(results, "AutoCaptureBucketCode"));
+            switch (bucketCode)
+            {
+                case 0: return "HighConfidence_OK";
+                case 1: return "LowConfidence_OK";
+                case 2: return "Uncertain_OK";
+                case 3: return "HighConfidence_NG";
+                case 4: return "LowConfidence_NG";
+                case 5: return "Uncertain_NG";
+                default: return isPassed ? "OK" : "NG";
+            }
+        }
+
+        private static double GetResultValue(Dictionary<string, double> results, string key)
+        {
+            if (results == null || string.IsNullOrWhiteSpace(key))
+            {
+                return 0;
+            }
+
+            if (results.TryGetValue(key, out double value))
+            {
+                return value;
+            }
+
+            var matchKey = results.Keys.FirstOrDefault(k => k.Equals(key, StringComparison.OrdinalIgnoreCase));
+            return matchKey != null ? results[matchKey] : 0;
+        }
+
         private class AutoDatasetMeta
         {
             public string TemplateName { get; set; }
@@ -310,6 +345,12 @@ namespace Audio900.Services
             public string ProductSN { get; set; }
             public string EmployeeId { get; set; }
             public string Result { get; set; }
+            public string CaptureBucket { get; set; }
+            public double TopConfidence { get; set; }
+            public double AverageConfidence { get; set; }
+            public int PredictionCount { get; set; }
+            public double QualityScore { get; set; }
+            public bool IsUncertain { get; set; }
             public DateTime Timestamp { get; set; }
             public string ImagePath { get; set; }
             public string LabelPath { get; set; }

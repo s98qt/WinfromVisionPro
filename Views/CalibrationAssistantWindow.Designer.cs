@@ -4,8 +4,8 @@ namespace Audio900.Views
     {
         private System.ComponentModel.IContainer components = null;
 
-        private Cognex.VisionPro.CogRecordDisplay cogRecordDisplay;
-        private Cognex.VisionPro.CalibFix.CogCalibCheckerboardEditV2 cogCalibEditV2;
+        private System.Windows.Forms.PictureBox cogRecordDisplay;
+        private System.Windows.Forms.Label cogCalibEditV2;
         private System.Windows.Forms.Button btnStartPreview;
         private System.Windows.Forms.Button btnStopPreview;
         private System.Windows.Forms.Button btnCapture;
@@ -26,8 +26,8 @@ namespace Audio900.Views
 
         private void InitializeComponent()
         {
-            this.cogRecordDisplay = new Cognex.VisionPro.CogRecordDisplay();
-            this.cogCalibEditV2 = new Cognex.VisionPro.CalibFix.CogCalibCheckerboardEditV2();
+            this.cogRecordDisplay = new System.Windows.Forms.PictureBox();
+            this.cogCalibEditV2 = new System.Windows.Forms.Label();
             this.btnStartPreview = new System.Windows.Forms.Button();
             this.btnStopPreview = new System.Windows.Forms.Button();
             this.btnCapture = new System.Windows.Forms.Button();
@@ -50,7 +50,6 @@ namespace Audio900.Views
             ((System.ComponentModel.ISupportInitialize)(this.numColumns)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numSquareSize)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.cogRecordDisplay)).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)(this.cogCalibEditV2)).BeginInit();
             this.panelLeft.SuspendLayout();
             this.panelRight.SuspendLayout();
             this.SuspendLayout();
@@ -78,6 +77,8 @@ namespace Audio900.Views
             this.cogRecordDisplay.Name = "cogRecordDisplay";
             this.cogRecordDisplay.Size = new System.Drawing.Size(676, 480);
             this.cogRecordDisplay.TabIndex = 0;
+            this.cogRecordDisplay.SizeMode = System.Windows.Forms.PictureBoxSizeMode.Zoom;
+            this.cogRecordDisplay.BackColor = System.Drawing.Color.Black;
             // 
             // lblInstructions
             // 
@@ -292,7 +293,6 @@ namespace Audio900.Views
             ((System.ComponentModel.ISupportInitialize)(this.numColumns)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numSquareSize)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.cogRecordDisplay)).EndInit();
-            ((System.ComponentModel.ISupportInitialize)(this.cogCalibEditV2)).EndInit();
             this.panelLeft.ResumeLayout(false);
             this.panelRight.ResumeLayout(false);
             this.ResumeLayout(false);

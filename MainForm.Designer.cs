@@ -574,7 +574,6 @@
         private System.Windows.Forms.Label lblImageArea;
         private System.Windows.Forms.Label lblCameraVideoStatus;
         private System.Windows.Forms.SplitContainer splitContainer1;
-        private Cognex.VisionPro.CogRecordDisplay cogRecordDisplay1;
         private System.Windows.Forms.Panel panelCameraDisplay;
         private System.Windows.Forms.Label lblNoCamera;
         private System.Windows.Forms.StatusStrip statusStrip1;

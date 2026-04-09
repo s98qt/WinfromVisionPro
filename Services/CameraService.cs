@@ -1,5 +1,3 @@
-using Cognex.VisionPro;
-using Cognex.VisionPro.ImageFile;
 using iMG;
 using System;
 using System.Collections.Generic;
@@ -40,11 +38,10 @@ namespace Audio900.Services
         private CameraType _cameraType;
         private CCamera _camera1960;
         private IntPtr _windowHandle1960 = IntPtr.Zero;
-        private ICogImage _cogImage;
         private Control _parentControl;
         private int _cameraIndex;
         private readonly object _frameLock = new object();
-        private ICogImage _latestFrame = null;
+        private Bitmap _latestFrame = null;
         private IntPtr _rgbBuffer1960 = IntPtr.Zero;
         private int _rgbBuffer1960Size = 0;
         private VideoRecordingService _videoRecordingService;
@@ -70,7 +67,7 @@ namespace Audio900.Services
         /// <summary>
         /// 单相机图像采集事件
         /// </summary>
-        public event EventHandler<ICogImage> ImageCaptured;
+        public event EventHandler<Bitmap> ImageCaptured;
 
         /// <summary>
         /// 多相机图像采集事件（带相机索引）
@@ -526,33 +523,34 @@ namespace Audio900.Services
                             bpp = 24;
                         }
 
-                        ICogImage cogImage = ConvertBGRDataToCogImage(data, w, h);
+                        Bitmap bitmap = CreateBitmapFromCameraData(data, w, h, bpp);
 
-                        if (cogImage != null)
+                        if (bitmap != null)
                         {
                             lock (_frameLock)
                             {
-                                _latestFrame = cogImage;
+                                if (_latestFrame != null)
+                                {
+                                    _latestFrame.Dispose();
+                                }
+                                _latestFrame = bitmap;
                             }
 
                             _newFrameSignal.Set();
 
                             if (_videoRecordingService != null && _videoRecordingService.IsRecording)
                             {
-                                Bitmap bitmap = CreateBitmapFromCameraData(data, w, h, bpp);
-                                if (bitmap != null)
-                                {
-                                    _videoRecordingService.WriteFrameDirect(bitmap);
-                                    bitmap.Dispose();
-                                }
+                                Bitmap videoBitmap = (Bitmap)bitmap.Clone();
+                                _videoRecordingService.WriteFrameDirect(videoBitmap);
+                                videoBitmap.Dispose();
                             }
 
                             if (_parentControl != null && !_parentControl.IsDisposed)
                             {
-                                var imageToSend = cogImage;
                                 // 丢帧机制：UI还在处理上一帧时，直接丢弃新帧，防止消息队列积压导致卡顿
                                 if (Monitor.TryEnter(_parentControl))
                                 {
+                                    Bitmap imageToSend = (Bitmap)bitmap.Clone();
                                     _parentControl.BeginInvoke(new Action(() =>
                                     {
                                         try
@@ -646,33 +644,34 @@ namespace Audio900.Services
                         {
                             getImageErrorCount = 0;
 
-                            ICogImage cogImage = ConvertRgbBufferToCogImage(_rgbBuffer1960, w, h);
+                            Bitmap bitmap = CreateBitmapFromRgbBuffer(_rgbBuffer1960, w, h);
 
-                            if (cogImage != null)
+                            if (bitmap != null)
                             {
                                 lock (_frameLock)
                                 {
-                                    _latestFrame = cogImage;
+                                    if (_latestFrame != null)
+                                    {
+                                        _latestFrame.Dispose();
+                                    }
+                                    _latestFrame = bitmap;
                                 }
 
                                 _newFrameSignal.Set();
 
                                 if (_videoRecordingService != null && _videoRecordingService.IsRecording)
                                 {
-                                    Bitmap bitmap = CreateBitmapFromRgbBuffer(_rgbBuffer1960, w, h);
-                                    if (bitmap != null)
-                                    {
-                                        _videoRecordingService.WriteFrameDirect(bitmap);
-                                        bitmap.Dispose();
-                                    }
+                                    Bitmap videoBitmap = (Bitmap)bitmap.Clone();
+                                    _videoRecordingService.WriteFrameDirect(videoBitmap);
+                                    videoBitmap.Dispose();
                                 }
 
                                 if (_parentControl != null && !_parentControl.IsDisposed)
                                 {
-                                    var imageToSend = cogImage;
                                     // 丢帧机制：UI还在处理上一帧时，直接丢弃新帧，防止消息队列积压导致卡顿
                                     if (Monitor.TryEnter(_parentControl))
                                     {
+                                        Bitmap imageToSend = (Bitmap)bitmap.Clone();
                                         _parentControl.BeginInvoke(new Action(() =>
                                         {
                                             try
@@ -779,17 +778,9 @@ namespace Audio900.Services
         }
 
         /// <summary>
-        /// 获取当前 VisionPro 图像（用于绑定到 UI）
-        /// </summary>
-        public ICogImage GetCogImage()
-        {
-            return _cogImage;
-        }
-
-        /// <summary>
         /// 单次拍照（用于模板创建）
         /// </summary>
-        public ICogImage CaptureSnapshotAsync()
+        public Bitmap CaptureSnapshotAsync()
         {
             try
             {
@@ -801,12 +792,11 @@ namespace Audio900.Services
                     {
                         lock (_frameLock)
                         {
-                            return CopyImage(_latestFrame);
+                            return _latestFrame != null ? (Bitmap)_latestFrame.Clone() : null;
                         }
                     }
                     else
                     {
-                        // 
                         LoggerService.Warn("单次拍照取的旧图CaptureSnapshotAsync，说明采集线程可能卡死了");
                         return null;
                     }
@@ -841,9 +831,8 @@ namespace Audio900.Services
                             return null;
                         }
 
-                        ICogImage snapshot = ConvertRgbBufferToCogImage(rgbBuffer, w, h);
-                        // 
-                        return CopyImage(snapshot);
+                        Bitmap snapshot = CreateBitmapFromRgbBuffer(rgbBuffer, w, h);
+                        return snapshot;
                     }
                     catch (Exception ex)
                     {
@@ -872,8 +861,9 @@ namespace Audio900.Services
                             iImg.AdaptBpp(data, w, h, bpp, data, 24);
                         }
 
-                        ICogImage snapshot = ConvertBGRDataToCogImage(data, w, h);
-                        return CopyImage(snapshot);
+                        // 直接从 BGR 数据创建 Bitmap
+                        Bitmap snapshot = CreateBitmapFromBGRData(data, w, h);
+                        return snapshot;
                     }
                     return null;
                 }
@@ -1033,109 +1023,62 @@ namespace Audio900.Services
             }
         }
 
-        private ICogImage ConvertBGRDataToCogImage(byte[] bgrData, int width, int height)
-        {
-            GCHandle handle = default;
-            try
-            {
-                handle = GCHandle.Alloc(bgrData, GCHandleType.Pinned);
-                IntPtr ptr = handle.AddrOfPinnedObject();
-
-                int stride = width * 3;
-
-                using (Bitmap bitmap = new Bitmap(width, height, stride, PixelFormat.Format24bppRgb, ptr))
-                {
-                    return new CogImage24PlanarColor(bitmap);
-                }
-
-                //ICogImage cogImage2 = Cognex.VisionPro.CogImageConvert.GetRGBImageFromBitmap(yourBitmap);
-
-                //using (Bitmap bitmap = new Bitmap(width, height, stride, PixelFormat.Format24bppRgb, ptr))
-                //{
-                //    使用 CreatePartiallyDefaultImgFromBitmap
-                //     或者 GetRGB8PlanarFromBitmap
-                //    return CogImageConvert.get  GetRGB8PlanarFromBitmap(bitmap);
-                //}
-            }
-            catch (Exception ex)
-            {
-                LoggerService.Error(ex, $"BGR数据转换失败: {ex.Message}");
-                return null;
-            }
-            finally
-            {
-                if (handle.IsAllocated)
-                {
-                    handle.Free();
-                }
-            }
-        }
-
-        
-        private ICogImage ConvertRgbBufferToCogImage(IntPtr rgbBuffer, int width, int height)
-        {
-            try
-            {
-                int stride = width * 3;
-
-                using (Bitmap bitmap = new Bitmap(width, height, stride, PixelFormat.Format24bppRgb, rgbBuffer))
-                {
-                    return new CogImage24PlanarColor(bitmap);
-                }
-            }
-            catch (Exception ex)
-            {
-                LoggerService.Error(ex, $"RGB缓冲区转换失败: {ex.Message}");
-                return null;
-            }
-        }
-
-        private ICogImage CopyImage(ICogImage source)
-        {
-            if (source == null) return null;
-
-            try
-            {
-                if (source is CogImage8Grey gray)
-                {
-                    return (ICogImage)gray.Copy(CogImageCopyModeConstants.CopyPixels);
-                }
-                else if (source is CogImage24PlanarColor color)
-                {
-                    return (ICogImage)color.Copy(CogImageCopyModeConstants.CopyPixels);
-                }
-                return null;
-            }
-            catch (Exception ex)
-            {
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
-                LoggerService.Error(ex, $"图像复制失败: {ex.Message}");
-                return null;
-            }
-        }
-
         /// <summary>
-        /// 获取最新的相机帧（返回ICogImage，用于VisionPro控件）
+        /// 从 BGR 数据创建 Bitmap（24位）
         /// </summary>
-        public ICogImage GetLatestFrame()
+        private Bitmap CreateBitmapFromBGRData(byte[] data, int width, int height)
         {
             try
             {
-                lock (_frameLock)
+                Bitmap bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+                BitmapData bmpData = bitmap.LockBits(
+                    new Rectangle(0, 0, width, height),
+                    ImageLockMode.WriteOnly,
+                    PixelFormat.Format24bppRgb);
+
+                try
                 {
-                    return _latestFrame;
+                    // 计算每行实际字节数
+                    int sourceStride = width * 3; // 源数据每行字节数（BGR 24位）
+                    int destStride = bmpData.Stride; // Bitmap每行字节数（可能对齐到4字节）
+
+                    if (sourceStride == destStride)
+                    {
+                        // stride 相同，直接拷贝
+                        int copySize = Math.Min(data.Length, height * destStride);
+                        Marshal.Copy(data, 0, bmpData.Scan0, copySize);
+                    }
+                    else
+                    {
+                        // stride 不同，逐行拷贝
+                        for (int y = 0; y < height; y++)
+                        {
+                            IntPtr destRow = bmpData.Scan0 + (y * destStride);
+                            int sourceOffset = y * sourceStride;
+                            int copyLength = Math.Min(sourceStride, data.Length - sourceOffset);
+                            if (copyLength > 0)
+                            {
+                                Marshal.Copy(data, sourceOffset, destRow, copyLength);
+                            }
+                        }
+                    }
                 }
+                finally
+                {
+                    bitmap.UnlockBits(bmpData);
+                }
+
+                return bitmap;
             }
             catch (Exception ex)
             {
-                LoggerService.Error(ex, "获取最新帧失败");
+                System.Diagnostics.Debug.WriteLine($"从BGR数据创建Bitmap失败: {ex.Message}");
                 return null;
             }
         }
 
         /// <summary>
-        /// 获取最新的相机帧作为Bitmap（用于简单的图片显示，不需要VisionPro控件）
+        /// 获取最新的相机帧作为Bitmap
         /// </summary>
         public Bitmap GetLatestFrameAsBitmap()
         {
@@ -1143,13 +1086,8 @@ namespace Audio900.Services
             {
                 lock (_frameLock)
                 {
-                    if (_latestFrame != null)
-                    {
-                        // 将ICogImage转换为Bitmap
-                        return _latestFrame.ToBitmap();
-                    }
+                    return _latestFrame != null ? (Bitmap)_latestFrame.Clone() : null;
                 }
-                return null;
             }
             catch (Exception ex)
             {
@@ -1207,6 +1145,6 @@ namespace Audio900.Services
     public class CameraImageEventArgs : EventArgs
     {
         public int CameraIndex { get; set; }
-        public ICogImage Image { get; set; }
+        public Bitmap Image { get; set; }
     }
 }

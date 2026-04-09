@@ -1,7 +1,4 @@
-﻿using Cognex.VisionPro;
-using Cognex.VisionPro.Display;
-using Cognex.VisionPro.ImageFile;
-using System;
+﻿using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
@@ -12,37 +9,7 @@ namespace Audio900.Tool
 {
     class VProTool
     {
-        /// <summary>
-        /// 将图像转换成CogImage8Grey
-        /// </summary>
-        /// <param name="imagepath">图片路径</param>
-        public static CogImage8Grey Get8GreyImage(string imagePath)
-        {
-            if (!File.Exists(imagePath))
-                return null;
-            CogImageFile ImageFile = new CogImageFile();
-            CogImage8Grey Image;
-            ImageFile.Open(imagePath, CogImageFileModeConstants.Read);
-            Image = (CogImage8Grey)ImageFile[0];
-            ImageFile.Close();
-            return Image;
-        }
-
-        /// <summary>
-        /// 将图像转换成ICogImage
-        /// </summary>
-        /// <param name="imagePath">图片路径</param>
-        public static ICogImage GetCogImage(string imagePath)
-        {
-            if (!File.Exists(imagePath))
-                return null;
-            CogImageFile ImageFile = new CogImageFile();
-            ICogImage Image; 
-            ImageFile.Open(imagePath, CogImageFileModeConstants.Read);
-            Image = ImageFile[0];
-            ImageFile.Close();
-            return Image;
-        }
+        // VisionPro 图像加载方法已移除
 
         /// <summary>
         /// 根据图片路径, 返回一张灰度图
@@ -105,25 +72,7 @@ namespace Audio900.Tool
             return bitmap;
         }
 
-        /// <summary>
-        /// 任务_VPro图片存储
-        /// </summary>
-        /// <param name="image">VPro控件</param>
-        /// <param name="filePath">文件路径(带文件名与后缀)</param>
-        /// <param name="isRecotd">是否存储结果原图</param>
-        public static void SaveVProImage(CogRecordDisplay imageDisplay, string filePath, bool isRecotd)
-        {
-            if (isRecotd)//存储带结果原图
-            {
-                //另一种保存record图片方式
-                //imageDisplay.Display.CreateContentBitmap(new CogDisplayContentBitmapConstants(), new CogRectangle(), 0).Save(path + @"\" + "testRecord.jpg");
-                Bitmap bmp = imageDisplay.CreateContentBitmap(CogDisplayContentBitmapConstants.Image) as Bitmap;
-                bmp.Save(filePath);
-            }
-            else {//存储原图
-                imageDisplay.Image.ToBitmap().Save(filePath);
-            }
-        }
+        // VisionPro 图片存储方法已移除
 
         /// <summary>
         /// 根据旋转中心旋转角度后得出坐标

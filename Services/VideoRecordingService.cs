@@ -6,7 +6,6 @@ using System.Runtime.InteropServices;
 using Accord.Video.FFMPEG;
 using System.Drawing;
 using System.Drawing.Imaging;
-using Cognex.VisionPro;
 
 namespace Audio900.Services
 {
@@ -127,7 +126,7 @@ namespace Audio900.Services
         /// <summary>
         /// 写入帧
         /// </summary>
-        public void WriteFrame(ICogImage image)
+        public void WriteFrame(Bitmap image)
         {
             if (!_isRecording || image == null)
                 return;
@@ -136,18 +135,8 @@ namespace Audio900.Services
             {
                 try
                 {
-                    // 将 ICogImage 转换为 Bitmap
-                    Bitmap bitmap = ICogImageToBitmap(image);
-                    
-                    if (bitmap == null)
-                    {
-                        _logger.Warn("ICogImage 转 Bitmap 失败，跳过此帧");
-                        return;
-                    }
-                    
-                    // 调用直接写入方法
-                    WriteFrameDirect(bitmap);
-                    bitmap.Dispose();
+                    // 直接写入 Bitmap
+                    WriteFrameDirect(image);
                 }
                 catch (Exception ex)
                 {
@@ -201,23 +190,6 @@ namespace Audio900.Services
             }
         }
         
-        /// <summary>
-        /// 将 ICogImage 转换为 Bitmap
-        /// </summary>
-        private Bitmap ICogImageToBitmap(ICogImage image)
-        {
-            try
-            {
-                if (image == null) return null;
-                // 使用 VisionPro 的扩展方法直接转换
-                return image.ToBitmap();
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex, "ICogImage 转 Bitmap 失败");
-                return null;
-            }
-        }
 
         public void Dispose()
         {

@@ -1,10 +1,5 @@
 using Audio.Services;
 using Audio900.Models;
-using Cognex.VisionPro;
-using Cognex.VisionPro.ImageFile;
-using Cognex.VisionPro.ImageProcessing;
-using Cognex.VisionPro.Implementation;
-using Cognex.VisionPro.ToolBlock;
 using Newtonsoft.Json;
 using NLog;
 using Params_OUMIT_;
@@ -20,6 +15,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using static Audio.Services.PostMes;
+using static Audio900.Services.WorkflowService;
 
 namespace Audio900.Services
 {
@@ -51,8 +47,6 @@ namespace Audio900.Services
         // 离线模式测试图片索引
         private int _offlineImageIndex = 0;
 
-        // ToolBlock 缓存
-        private Dictionary<int, CogToolBlock> _stepToolBlocks = new Dictionary<int, CogToolBlock>();
         
         // Deep Learning 模型全局实例
         private YoloOBBInference _globalYoloService;
@@ -62,10 +56,22 @@ namespace Audio900.Services
         private static Dictionary<int, SemaphoreSlim> _cameraLocks = new Dictionary<int, SemaphoreSlim>();
         public  object _lockInitLock = new object();
 
+        // 自动数据集导出服务 (需求2)
+        private AutoDatasetExportService _autoDatasetExportService;
+        
+        // 配置项：是否启用自动数据集采集
+        public bool EnableAutoDatasetCapture { get; set; } = true;
+        
+        // 配置项：最低置信度阈值（低于此值不采集，避免垃圾数据）
+        public double MinConfidenceForCapture { get; set; } = 0.25;
+        
+        // 配置项：是否仅采集失败案例
+        public bool CaptureOnlyFailures { get; set; } = false;
+
         // 图像稳定性判断状态类 (用于并行执行时的线程安全)
         private class StabilityState
         {
-            public ICogImage PreviousGrayImage { get; set; }
+            public Bitmap PreviousGrayImage { get; set; }
             public Stopwatch StableTimer { get; set; }
             public bool IsStabilityChecking { get; set; }
         }
@@ -86,8 +92,6 @@ namespace Audio900.Services
         public event EventHandler<InspectionResultEventArgs> InspectionResultReady; // 用于结果的精准量测
         public event EventHandler<InspectionResultEventArgs> InOnYoloDetection; // 用于Yolo的过程检测
 
-        public event EventHandler<ToolBlockDebugEventArgs> ToolBlockDebugReady;
-
         public bool EnableDebugPopup { get; set; }
 
         public WorkflowService(CameraService cameraService, CalibrationService calibrationService = null)
@@ -98,6 +102,9 @@ namespace Audio900.Services
 
             // 初始化视频录制服务
             _videoRecordingService = new VideoRecordingService();
+            
+            // 初始化自动数据集导出服务 (需求2)
+            _autoDatasetExportService = new AutoDatasetExportService();
             if (_cameraService != null)
             {
                 _cameraService.SetVideoRecordingService(_videoRecordingService);
@@ -153,13 +160,6 @@ namespace Audio900.Services
             });
         }
 
-        /// <summary>
-        /// 获取指定步骤的 ToolBlock（用于实时AR跟踪等场景）
-        /// </summary>
-        public bool GetToolBlock(int stepNumber, out CogToolBlock toolBlock)
-        {
-            return _stepToolBlocks.TryGetValue(stepNumber, out toolBlock);
-        }
 
         /// <summary>
         /// 开始工作流程
@@ -194,8 +194,8 @@ namespace Audio900.Services
                         _currentTemplate.TemplateName
                     );
 
-                    _stepToolBlocks.Clear();
-                    
+                    //_stepToolBlocks.Clear();
+
                     // 模型现在在 MainForm_Load 时已经预加载好，这里只需要检查是否加载成功即可
                     if (_globalYoloService == null)
                     {
@@ -207,17 +207,14 @@ namespace Audio900.Services
                     foreach (var step in _currentTemplate.WorkSteps)
                     {
                         string stepFolder = Path.Combine(templatePath, $"Step{step.StepNumber}");
-                        
+
                         // 优先加载 ToolBlockPath (VisionPro 模式)
                         if (!string.IsNullOrEmpty(step.ToolBlockPath) && File.Exists(step.ToolBlockPath))
                         {
                             try
                             {
-                                var tb = CogSerializer.LoadObjectFromFile(step.ToolBlockPath) as CogToolBlock;
-                                if (tb != null)
-                                {
-                                    _stepToolBlocks[step.StepNumber] = tb;
-                                }
+                                // ToolBlock 功能已移除
+
                             }
                             catch (Exception ex)
                             {
@@ -226,80 +223,81 @@ namespace Audio900.Services
                         }
                     }
 
-                }
+                    UpdateStatus($"已加载模板: {_currentTemplate?.TemplateName}");
 
-                UpdateStatus($"已加载模板: {_currentTemplate?.TemplateName}");
-
-                // 执行各个作业步骤
-                if (_currentTemplate != null)
-                {
-                    List<WorkStep> batch = new List<WorkStep>();
-                    await Task.Run(async () => {
-
-                        foreach (var step in _currentTemplate.WorkSteps)
+                    // 执行各个作业步骤
+                    if (_currentTemplate != null)
+                    {
+                        List<WorkStep> batch = new List<WorkStep>();
+                        await Task.Run(async () =>
                         {
-                            batch.Add(step);
-                            if (step.IsArMode)
+
+                            foreach (var step in _currentTemplate.WorkSteps)
                             {
-                                await ExecuteArLoopAsync(step); // 只要是循环检测，那么就是逐步执行
+                                batch.Add(step);
+                                if (step.IsArMode)
+                                {
+                                    await ExecuteArLoopAsync(step); // 只要是循环检测，那么就是逐步执行
 
-                                batch.Clear();
+                                    batch.Clear();
+                                }
                             }
-                        }
 
-                        if (batch.Count > 0) // 单次检测
-                        {
-                            if (batch == null || batch.Count == 0) return;
-                           await ExecuteStandardCheckAsync(batch[0]);// 暂时设定最后一步为最终量测
-                            // 动态计算批处理超时时间
-                            //int maxTimeout = batch.Max(s => s.Timeout > 0 ? s.Timeout : 5000);
-                            //int batchTimeout = maxTimeout + 5000; // 加5秒缓冲
-                            //var tasks = batch.Select(step => ExecuteStandardCheckAsync(step)).ToList();
-                            //var whenAllTask = Task.WhenAll(tasks);
-                            //var timeoutTask = Task.Delay(batchTimeout);
-                            //var completedTask = await Task.WhenAny(whenAllTask, timeoutTask);
-                        }
+                            if (batch.Count > 0) // 单次检测
+                            {
+                                if (batch == null || batch.Count == 0) return;
+                                await ExecuteStandardCheckAsync(batch[0]);
+                                // 暂时设定最后一步为最终量测
+                                                                          // 动态计算批处理超时时间
+                                                                          //int maxTimeout = batch.Max(s => s.Timeout > 0 ? s.Timeout : 5000);
+                                                                          //int batchTimeout = maxTimeout + 5000; // 加5秒缓冲
+                                                                          //var tasks = batch.Select(step => ExecuteStandardCheckAsync(step)).ToList();
+                                                                          //var whenAllTask = Task.WhenAll(tasks);
+                                                                          //var timeoutTask = Task.Delay(batchTimeout);
+                                                                          //var completedTask = await Task.WhenAny(whenAllTask, timeoutTask);
+                            }
 
-                        //var data = GetData();
-                        //// 并行处理两部分数据
-                        //var t1 = Task.Run(() => ProcessPart1(data));
-                        //var t2 = Task.Run(() => ProcessPart2(data));
+                            //var data = GetData();
+                            //// 并行处理两部分数据
+                            //var t1 = Task.Run(() => ProcessPart1(data));
+                            //var t2 = Task.Run(() => ProcessPart2(data));
 
-                        //await Task.WhenAll(t1, t2);
-                    });
+                            //await Task.WhenAll(t1, t2);
+                        });
 
 
+                    }
+
+                    IsArModeRunning = false;
+                    // 保存数据
+                    ChangeState(WorkflowState.SavingData);
+                    SaveImageAndVideo();
+                    UpdateStatus("数据已保存");
+
+                    // Mes过站
+                    string strMesResult = PostMes.CreateInstance().PostCheckSN(productSN, toolingNo);
+                    //MesResult mesResult = new MesResult();
+                    //mesResult = JsonConvert.DeserializeAnonymousType<MesResult>(strMesResult, mesResult);
+
+                    // 上传MES
+                    ChangeState(WorkflowState.UploadingMES);
+                    UploadToMES();
+                    UpdateStatus("已上传MES");
+
+                    // 完成
+                    ChangeState(WorkflowState.Idle);
+                    UpdateStatus("作业完成");
+
+                    // 检查所有步骤状态，确认最终结果
+                    bool allPassed = _currentTemplate.WorkSteps.All(s => s.Status == "检测通过");
+                    OverallResultChanged?.Invoke("PASS");
+
+                    // 2. 停止录制视频
+                    _videoRecordingService.StopRecording();
+                    RecordingStatusChanged?.Invoke("视频录制完成", Color.Green);
+
+                    _logger.Info($"【作业流程完成】SN: {productSN}, 总帧数: {_videoRecordingService.FrameCount}");
                 }
-
-                IsArModeRunning = false;
-                // 保存数据
-                ChangeState(WorkflowState.SavingData);
-                SaveImageAndVideo();
-                UpdateStatus("数据已保存");
-
-                // Mes过站
-                string strMesResult = PostMes.CreateInstance().PostCheckSN(productSN, toolingNo);
-                //MesResult mesResult = new MesResult();
-                //mesResult = JsonConvert.DeserializeAnonymousType<MesResult>(strMesResult, mesResult);
-
-                // 上传MES
-                ChangeState(WorkflowState.UploadingMES);
-                UploadToMES();
-                UpdateStatus("已上传MES");
-
-                // 完成
-                ChangeState(WorkflowState.Idle);
-                UpdateStatus("作业完成");
-
-                // 检查所有步骤状态，确认最终结果
-                bool allPassed = _currentTemplate.WorkSteps.All(s => s.Status == "检测通过");
-                OverallResultChanged?.Invoke("PASS");
-
-                // 2. 停止录制视频
-                _videoRecordingService.StopRecording();
-                RecordingStatusChanged?.Invoke("视频录制完成", Color.Green);
-
-                _logger.Info($"【作业流程完成】SN: {productSN}, 总帧数: {_videoRecordingService.FrameCount}");
             }
             catch (Exception ex)
             {
@@ -425,7 +423,7 @@ namespace Audio900.Services
                     while (true)
                     {
                         loopCount++;
-                        ICogImage liveImage = null;
+                        Bitmap liveImage = null;
 
                         try
                         {
@@ -444,9 +442,8 @@ namespace Audio900.Services
                                 liveImage = _calibrationService.ApplyCalibration(liveImage, step.CameraIndex);
                             }
 
-                            (bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloOBBPrediction> Predictions) result;
-                            var toolBlock = _stepToolBlocks.ContainsKey(step.StepNumber) ? _stepToolBlocks[step.StepNumber] : null;
-                            result = await RunHybridLogic(liveImage, step, toolBlock);
+                            (bool Passed, string Reason, Dictionary<string, double> Results, List<YoloOBBPrediction> Predictions) result;
+                            result = await RunHybridLogic(liveImage, step);
                             bool isInROI = result.Results.ContainsKey("IsInROI") && result.Results["IsInROI"] > 0;
                             PointF? centerPoint = null;
                             if (result.Results.ContainsKey("CenterX") && result.Results.ContainsKey("CenterY"))
@@ -457,7 +454,6 @@ namespace Audio900.Services
                             InOnYoloDetection?.Invoke(this, new InspectionResultEventArgs
                             {
                                 Image = liveImage,
-                                Record = result.Record,
                                 Results = result.Results,
                                 IsPassed = result.Passed,
                                 Step = step,
@@ -465,6 +461,12 @@ namespace Audio900.Services
                                 IsInROI = isInROI,
                                 CenterPoint = centerPoint
                             });
+
+                            // 【需求2】AR模式也支持自动数据集导出（当检测通过时采集）
+                            if (result.Passed)
+                            {
+                                TryAutoExportDataset(liveImage, step, true, result.Predictions, result.Results);
+                            }
 
                             if (result.Passed)
                             {
@@ -534,7 +536,7 @@ namespace Audio900.Services
             EnsureCameraLockInitialized(step.CameraIndex);
 
             StabilityState stabilityState = new StabilityState();
-            ICogImage lastCapturedImage = null; 
+            Bitmap lastCapturedImage = null; 
             
             try
             {
@@ -549,7 +551,7 @@ namespace Audio900.Services
                 _logger.Info($"步骤{step.StepNumber} 超时设置: {timeoutMs}ms");
 
                 // 持续采集图像，直到图像稳定 AND 匹配分数都满足
-                ICogImage validImage = null;
+                Bitmap validImage = null;
                 stepPassed = false;
                 int totalCheckCount = 0;
                 const int CHECK_DELAY = 20; // 每次检测间隔（毫秒）
@@ -559,7 +561,7 @@ namespace Audio900.Services
                     totalCheckCount++;
 
                     // 使用相机锁防止并发冲突
-                    ICogImage currentImage = null;
+                    Bitmap currentImage = null;
                     await _cameraLocks[step.CameraIndex].WaitAsync();
                     try
                     {
@@ -614,17 +616,10 @@ namespace Audio900.Services
                     // 执行视觉检测（包含参数公差比对）
                     _logger.Info($"执行了吗？执行视觉检测（包含参数公差比对）");
                     
-                    (bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloOBBPrediction> Predictions) inspection;
+                    (bool Passed, string Reason, Dictionary<string, double> Results, List<YoloOBBPrediction> Predictions) inspection;
 
-                    if (step.AlgorithmType == 1)
-                    {
-                         var toolBlock = _stepToolBlocks.ContainsKey(step.StepNumber) ? _stepToolBlocks[step.StepNumber] : null;
-                         inspection = await RunHybridLogic(currentImage, step, toolBlock);
-                    }
-                    else
-                    {
-                         inspection = await RunVisionInspection(currentImage, _stepToolBlocks.ContainsKey(step.StepNumber) ? _stepToolBlocks[step.StepNumber] : null, step);
-                    }
+                    // ToolBlock 功能已移除，统一使用深度学习
+                    inspection = await RunDeepLearningLogic(currentImage, step);
 
                     UpdateStatus($"步骤{step.StepNumber}: {inspection.Reason}");
                     
@@ -632,12 +627,14 @@ namespace Audio900.Services
                     InspectionResultReady?.Invoke(this, new InspectionResultEventArgs 
                     { 
                         Image = currentImage,
-                        Record = inspection.Record,
                         Results = inspection.Results,
                         IsPassed = inspection.Passed,
                         Step = step,
                         Predictions = inspection.Predictions
                     });
+
+                    // 【需求2】自动数据集导出：检测完成后立即采集（不论Pass/Fail）
+                    TryAutoExportDataset(currentImage, step, inspection.Passed, inspection.Predictions, inspection.Results);
 
                     // 步骤4：判断匹配结果
                     if (inspection.Passed)
@@ -653,7 +650,7 @@ namespace Audio900.Services
                         
                         // 保存原始 BMP（用于备份）
                         string originalBmpPath = Path.Combine(snFolder, $"Step{step.StepNumber}_original.bmp");
-                        SaveCogImageToBmp(currentImage, originalBmpPath);
+                        currentImage.Save(originalBmpPath, System.Drawing.Imaging.ImageFormat.Bmp);
                         
                         // 保存压缩后的 JPEG（用于 MES 上传）
                         string compressedJpgPath = Path.Combine(snFolder, $"Step{step.StepNumber}_compressed.jpg");
@@ -750,41 +747,19 @@ namespace Audio900.Services
             step.Status = status;
         }
         
-        private async Task UpdateStepImage(WorkStep step, ICogImage image)
+        private async Task UpdateStepImage(WorkStep step, Bitmap image)
         {
             try
             {
                 await Task.Run(() =>
                 {
                     step.CapturedImage = image;
-                    var bitmap = ConvertICogImageToBitmap(image);
-                    if (bitmap != null) step.ImageSource = bitmap;
+                    if (image != null) step.ImageSource = (Bitmap)image.Clone();
                 });
             }
             catch (Exception ex)
             {
                 _logger.Error(ex, "更新步骤图像失败");
-            }
-        }
-
-        /// <summary>
-        /// 将 ICogImage 转换为 Bitmap
-        /// </summary>
-        private Bitmap ConvertICogImageToBitmap(ICogImage ICogImage)
-        {
-            if (ICogImage == null) return null;
-            try
-            {
-                using (var bmp = ICogImage.ToBitmap())
-                {
-                    // 克隆一个新的 Bitmap，确保与原始 ICogImage 解耦
-                    return new Bitmap(bmp);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"图像转换失败: {ex.Message}");
-                return null;
             }
         }
 
@@ -798,13 +773,13 @@ namespace Audio900.Services
             _videoRecordingService.StopRecording();
         }
 
-        private async Task<ICogImage> CaptureOumitImage(int cameraIndex = 0)
+        private async Task<Bitmap> CaptureOumitImage(int cameraIndex = 0)
         {
             // 统一使用封装的采集方法，支持离线回退
             return await Task.Run(() => CaptureFromCameraOrOffline(cameraIndex));
         }
 
-        private ICogImage CaptureFromCameraOrOffline(int cameraIndex = 0)
+        private Bitmap CaptureFromCameraOrOffline(int cameraIndex = 0)
         {
             // 1. 检查相机连接状态，如果未连接则直接进入离线模式
             if (_cameraService == null || !_cameraService.IsConnected)
@@ -818,7 +793,7 @@ namespace Audio900.Services
             {
                 if (_cameraService != null)
                 {
-                    ICogImage image = null;
+                    Bitmap image = null;
                     if (_cameraService.IsMultiCameraMode)
                     {
                         var camera = _cameraService.GetCamera(cameraIndex);
@@ -859,7 +834,7 @@ namespace Audio900.Services
         /// <summary>
         /// 从离线文件夹加载图片
         /// </summary>
-        private ICogImage LoadOfflineImage()
+        private Bitmap LoadOfflineImage()
         {
             try
             {
@@ -885,10 +860,8 @@ namespace Audio900.Services
                         // 循环读取
                         string imageFile = files[_offlineImageIndex % files.Length];
                         
-                        CogImageFileTool fileTool = new CogImageFileTool();
-                        fileTool.Operator.Open(imageFile, CogImageFileModeConstants.Read);
-                        fileTool.Run();
-                        ICogImage offlineImage = fileTool.OutputImage;
+                        // 使用 Bitmap 加载图像
+                        Bitmap offlineImage = new Bitmap(imageFile);
                         
                         // 指向下一张
                         _offlineImageIndex++;
@@ -915,116 +888,9 @@ namespace Audio900.Services
 
         private async Task<bool> CheckImageDefect(object image, WorkStep step, StabilityState state)
         {
-            try
-            {
-                ICogImage currentFrame = image as ICogImage; // 使用传入的图像作为当前帧
-
-                if (currentFrame == null)
-                {
-                    UpdateStatus("图像为空");
-                    return true;
-                }
-
-                ICogImage currentGray = null;
-                if (currentFrame is CogImage8Grey)
-                {
-                    currentGray = currentFrame;
-                }
-                else
-                {
-                    try 
-                    {
-                        CogImageConvertTool convertTool = new CogImageConvertTool();
-                        convertTool.InputImage = currentFrame;
-                        convertTool.Run();
-                        currentGray = convertTool.OutputImage as CogImage8Grey;
-                    }
-                    catch
-                    {
-                        currentGray = currentFrame; 
-                    }
-                }
-                
-                if (state.PreviousGrayImage == null)
-                {
-                    state.PreviousGrayImage = currentGray;
-                    state.StableTimer = Stopwatch.StartNew();
-                    state.IsStabilityChecking = true;
-                    step.Status = "等待图像稳定...";
-                    return true; // 继续检测
-                }
-
-                // 计算当前帧与上一帧的平均灰度差
-                double avgDiff = CalculateAverageGrayDifference(state.PreviousGrayImage, currentGray);
-                
-                // 更新状态显示
-                step.Status = $"灰度差值: {avgDiff:F2} (已稳定 {state.StableTimer.ElapsedMilliseconds}ms)";
-                _logger.Info($"图像不稳定吗？avgDiff，{avgDiff}");
-                // 判断灰度差是否小于阈值
-                if (avgDiff < GRAY_DIFF_THRESHOLD)
-                {
-                    // 图像稳定，检查持续时间
-                    _logger.Info($"检查持续时间？state.StableTimer.ElapsedMilliseconds，{state.StableTimer.ElapsedMilliseconds} ");
-                    if (state.StableTimer.ElapsedMilliseconds >= STABLE_DURATION_MS)
-                    {
-                        step.Status = "图像稳定，触发成功";
-                        UpdateStatus($"稳定检测通过 (灰度差: {avgDiff:F2})");
-                        _logger.Info($"图像无问题可以继续吗？");
-                        return false; // 无问题，可以继续
-                    }
-                    else
-                    {
-                        state.PreviousGrayImage = currentGray; // 更新上一帧
-                        return true; 
-                    }
-                }
-                else
-                {
-                    step.Status = $"图像不稳定，重新计时 (灰度差: {avgDiff:F2})";
-                    state.StableTimer.Restart();
-                    state.PreviousGrayImage = currentGray;
-                    return true; 
-                }
-            }
-            catch (Exception ex)
-            {
-                UpdateStatus($"稳定性检测异常: {ex.Message}");
-                ResetStabilityCheck(state);
-                return true; 
-            }
-        }
-
-        /// <summary>
-        /// 计算两幅灰度图像的平均灰度差
-        /// </summary>
-        private double CalculateAverageGrayDifference(ICogImage grayImage1, ICogImage grayImage2)
-        {
-            try
-            {
-                if (grayImage1 == null || grayImage2 == null) return 0.0;
-
-                CogIPTwoImageSubtract subtractOp = new CogIPTwoImageSubtract();
-                subtractOp.OverflowMode = CogIPTwoImageSubtractOverflowModeConstants.Absolute;
-                ICogImage diffImage = subtractOp.Execute(grayImage1, grayImage2, null,null);
-
-                CogHistogramTool histTool = new CogHistogramTool();
-                histTool.InputImage = diffImage as CogImage8Grey;
-                if (histTool.InputImage == null) return 0.0;
-
-                histTool.Run();
-
-                if (histTool.Result != null)
-                {
-                    return histTool.Result.Mean;
-                }
-
-                return 0.0;
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"灰度差计算异常: {ex.Message}");
-                return 999.0; 
-            }
+            // 简化图像稳定性判断：直接返回 false 表示图像可用
+            // TODO: 如需精确判断，可用 OpenCV 实现灰度差计算
+            return false;
         }
 
         /// <summary>
@@ -1120,21 +986,13 @@ namespace Audio900.Services
             return img;
         }
 
-        private void SaveCogImageToBmp(ICogImage image, string path)
-        {
-             using(var bmp = image.ToBitmap())
-             {
-                 bmp.Save(path, ImageFormat.Bmp);
-             }
-        }
-
-        private void SaveCompressedImage(ICogImage image, string outputPath, int maxSizeKB = 200)
+        private void SaveCompressedImage(Bitmap image, string outputPath, int maxSizeKB = 200)
         {
             string tempBmpPath = null;
             try
             {
                 tempBmpPath = Path.Combine(Path.GetTempPath(), $"temp_{Guid.NewGuid()}.bmp");
-                SaveCogImageToBmp(image, tempBmpPath);
+                image.Save(tempBmpPath, ImageFormat.Bmp);
                 
                 using (var originalBitmap = new Bitmap(tempBmpPath))
                 {
@@ -1157,7 +1015,7 @@ namespace Audio900.Services
                 _logger.Error($"图片压缩失败: {ex.Message}");
                 try
                 {
-                    SaveCogImageToBmp(image, outputPath);
+                    image.Save(outputPath, ImageFormat.Bmp);
                 }
                 catch { }
             }
@@ -1175,10 +1033,9 @@ namespace Audio900.Services
         /// <summary>
         /// 执行深度学习检测逻辑
         /// </summary>
-        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloOBBPrediction> Predictions)> RunDeepLearningLogic(ICogImage image, WorkStep step)
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, List<YoloOBBPrediction> Predictions)> RunDeepLearningLogic(Bitmap image, WorkStep step)
         {
             var results = new Dictionary<string, double>();
-            ICogRecord record = null;
             string reason = "";
             bool passed = false;
             List<YoloOBBPrediction> predictions = new List<YoloOBBPrediction>();
@@ -1189,104 +1046,98 @@ namespace Audio900.Services
                 // 使用全局模型
                 if (_globalYoloService == null)
                 {
-                    return (false, "深度学习模型未加载", results, null, predictions);
+                    return (false, "深度学习模型未加载", results, predictions);
                 }
 
                 var dlService = _globalYoloService;
 
-                // 转换图像
-                using (var bitmap = image.ToBitmap())
+                // 运行推理（image 已经是 Bitmap）
+                predictions = await Task.Run(() => dlService.Predict(image, (float)step.ConfidenceThreshold));
+
+                // 如果启用了过程检测模式
+                if (step.EnableProcessDetection && step.DetectionROI.Width > 0 && step.DetectionROI.Height > 0)
                 {
-                    // 运行推理
-                    predictions = await Task.Run(() => dlService.Predict(bitmap, (float)step.ConfidenceThreshold));
-
-                    // 如果启用了过程检测模式
-                    if (step.EnableProcessDetection && step.DetectionROI.Width > 0 && step.DetectionROI.Height > 0)
+                    // 过滤目标类别（如果有设置）
+                    var filteredPredictions = predictions;
+                    if (step.TargetClassIds != null && step.TargetClassIds.Count > 0)
                     {
-                        // 过滤目标类别（如果有设置）
-                        var filteredPredictions = predictions;
-                        if (step.TargetClassIds != null && step.TargetClassIds.Count > 0)
-                        {
-                            filteredPredictions = predictions.Where(p => step.TargetClassIds.Contains(p.ClassId)).ToList();
-                        }
+                        filteredPredictions = predictions.Where(p => step.TargetClassIds.Contains(p.ClassId)).ToList();
+                    }
 
-                        // 判断是否有目标的中心点在 ROI 内
-                        bool isInROI = false;
-                        YoloOBBPrediction targetInROI = null;
-                        PointF centerPoint = PointF.Empty;
+                    // 判断是否有目标的中心点在 ROI 内
+                    bool isInROI = false;
+                    YoloOBBPrediction targetInROI = null;
+                    PointF centerPoint = PointF.Empty;
 
-                        foreach (var pred in filteredPredictions)
+                    foreach (var pred in filteredPredictions)
+                    {
+                        predictClassID = pred.ClassId;
+                        // 计算中心点（使用旋转框的4个角点计算中心）
+                        float centerX = pred.RotatedBox.Average(p => p.X);
+                        float centerY = pred.RotatedBox.Average(p => p.Y);
+                        
+                        // 判断中心点是否在 ROI 内（支持旋转矩形）
+                        if (IsPointInRotatedROI(centerX, centerY, step.DetectionROI, step.DetectionROIRotation))
                         {
-                            predictClassID = pred.ClassId;
-                            // 计算中心点（使用旋转框的4个角点计算中心）
-                            float centerX = pred.RotatedBox.Average(p => p.X);
-                            float centerY = pred.RotatedBox.Average(p => p.Y);
-                            
-                            // 判断中心点是否在 ROI 内（支持旋转矩形）
-                            if (IsPointInRotatedROI(centerX, centerY, step.DetectionROI, step.DetectionROIRotation))
-                            {
-                                isInROI = true;
-                                targetInROI = pred;
-                                centerPoint = new PointF(centerX, centerY);
-                                break;
-                            }
+                            isInROI = true;
+                            targetInROI = pred;
+                            centerPoint = new PointF(centerX, centerY);
+                            break;
                         }
+                    }
 
-                        // 判定条件：中心点在 ROI 内并且当前步骤顺序和识别的顺序是一一对应
-                        if (isInROI && stepClassID == predictClassID)
-                        {
-                            passed = true;
-                            reason = $"动作完成：{targetInROI.Label} 进入检测区域";
-                            results["Score"] = targetInROI.Confidence;
-                            results["CenterX"] = centerPoint.X;
-                            results["CenterY"] = centerPoint.Y;
-                            results["IsInROI"] = 1;
-                            _logger.Info($"步骤{step.StepNumber}: 过程检测通过，中心点 ({centerPoint.X:F0}, {centerPoint.Y:F0}) 在 ROI 内");
-                        }
-                        else
-                        {
-                            passed = false;
-                            if (filteredPredictions.Count > 0)
-                            {
-                                reason = "等待动作：物体未进入检测区域";
-                                var best = filteredPredictions.OrderByDescending(p => p.Confidence).First();
-                                results["Score"] = best.Confidence;
-                            }
-                            else
-                            {
-                                reason = "等待动作：未检测到目标物";
-                                results["Score"] = 0;
-                            }
-                            results["IsInROI"] = 0;
-                        }
+                    // 判定条件：中心点在 ROI 内并且当前步骤顺序和识别的顺序是一一对应
+                    if (isInROI && stepClassID == predictClassID)
+                    {
+                        passed = true;
+                        reason = $"动作完成：{targetInROI.Label} 进入检测区域";
+                        results["Score"] = targetInROI.Confidence;
+                        results["CenterX"] = centerPoint.X;
+                        results["CenterY"] = centerPoint.Y;
+                        results["IsInROI"] = 1;
+                        _logger.Info($"步骤{step.StepNumber}: 过程检测通过，中心点 ({centerPoint.X:F0}, {centerPoint.Y:F0}) 在 ROI 内");
                     }
                     else
                     {
-                        // 原有的简单判定逻辑：识别到目标即为通过
-                        passed = predictions.Count > 0;
-                        
-                        if (passed)
+                        passed = false;
+                        if (filteredPredictions.Count > 0)
                         {
-                            reason = $"识别成功: {predictions.Count}个目标";
-                            // 取置信度最高的目标作为分数输出
-                            var best = predictions.OrderByDescending(p => p.Confidence).First();
+                            reason = "等待动作：物体未进入检测区域";
+                            var best = filteredPredictions.OrderByDescending(p => p.Confidence).First();
                             results["Score"] = best.Confidence;
-                            results["ClassId"] = best.ClassId;
-                            // 使用旋转框中心点
-                            results["X"] = best.RotatedBox.Average(p => p.X);
-                            results["Y"] = best.RotatedBox.Average(p => p.Y);
-                            results["Angle"] = best.Angle;
                         }
                         else
                         {
-                            reason = "未识别到目标";
+                            reason = "等待动作：未检测到目标物";
                             results["Score"] = 0;
                         }
+                        results["IsInROI"] = 0;
                     }
-
-                    // 创建简单的图像记录
-                    record = new CogRecord("Image", typeof(ICogImage), CogRecordUsageConstants.Result, false, image, "Image");
                 }
+                else
+                {
+                    // 原有的简单判定逻辑：识别到目标即为通过
+                    passed = predictions.Count > 0;
+                    
+                    if (passed)
+                    {
+                        reason = $"识别成功: {predictions.Count}个目标";
+                        // 取置信度最高的目标作为分数输出
+                        var best = predictions.OrderByDescending(p => p.Confidence).First();
+                        results["Score"] = best.Confidence;
+                        results["ClassId"] = best.ClassId;
+                        // 使用旋转框中心点
+                        results["X"] = best.RotatedBox.Average(p => p.X);
+                        results["Y"] = best.RotatedBox.Average(p => p.Y);
+                        results["Angle"] = best.Angle;
+                    }
+                    else
+                    {
+                        reason = "未识别到目标";
+                        results["Score"] = 0;
+                    }
+                }
+
             }
             catch (Exception ex)
             {
@@ -1294,182 +1145,26 @@ namespace Audio900.Services
                 _logger.Error(ex, $"步骤{step.StepNumber} DL异常");
             }
 
-            return (passed, reason, results, record, predictions);
+            return (passed, reason, results, predictions);
         }
 
         /// <summary>
         /// 执行过程检测逻辑：只用YOLOv8进行AR 显示
         /// </summary>
-        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloOBBPrediction> Predictions)> RunHybridLogic(ICogImage image, WorkStep step, CogToolBlock toolBlock)
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, List<YoloOBBPrediction> Predictions)> RunHybridLogic(Bitmap image, WorkStep step)
         {
             // 跑深度学习  - 主要是为了获取 AR 效果
             var yoloResult = await RunDeepLearningLogic(image, step);
-            
-            // 默认使用 YOLO 的 Record 
-            var finalRecord = yoloResult.Record;
-            
-            if (yoloResult.Passed)
-            {  
-                return (yoloResult.Passed, "YOLO通过", yoloResult.Results, finalRecord, yoloResult.Predictions);             
-            }
-            
-            // YOLO 没识别到，直接返回 YOLO 的失败结果
             return yoloResult;
         }
 
         /// <summary>
-        /// 执行视觉检测：运行工具块并校验参数公差
+        /// VisionPro ToolBlock 量测功能已完全移除
         /// </summary>
-        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, ICogRecord Record, List<YoloOBBPrediction> Predictions)> RunVisionInspection(ICogImage image, CogToolBlock cogToolBlock, WorkStep step)
+        private async Task<(bool Passed, string Reason, Dictionary<string, double> Results, List<YoloOBBPrediction> Predictions)> RunVisionInspection(Bitmap image, WorkStep step)
         {
-            
-            var results = new Dictionary<string, double>();
-            ICogRecord record = null;
-            
-            if (cogToolBlock == null)
-            {
-                return (false, "ToolBlock未加载", results, null, new List<YoloOBBPrediction>());
-            }
-
-            CogToolBlock toolBlock = cogToolBlock;
-
-            async void FireDebug(string message)
-            {
-                if (!EnableDebugPopup) return;
-                try
-                {
-                    if (record == null && toolBlock != null)
-                    {
-                        record = toolBlock.CreateLastRunRecord();
-                    }
-
-                    ToolBlockDebugReady?.Invoke(this, new ToolBlockDebugEventArgs
-                    {
-                        StepNumber = step.StepNumber,
-                        Step = step,
-                        ToolBlock = toolBlock,
-                        Record = record,
-                        Message = message
-                    });
-                }
-                catch
-                {
-                }
-            }
-
-            try
-            {
-                lock (toolBlock)
-                {
-                    if (toolBlock.Inputs.Contains("InputImage"))
-                    {
-                        toolBlock.Inputs["InputImage"].Value = image;
-                    }
-                        
-                    toolBlock.Run();
-
-                    // 创建运行记录
-                    record = toolBlock.CreateLastRunRecord();
-
-                    _logger.Info($"已运行toolBlock，{record.RecordKey},{record.SubRecords.Count}");
-                    // 调试模式：无论成功失败都弹出调试窗口
-                    if (EnableDebugPopup)
-                    {
-                        string statusMsg = toolBlock.RunStatus.Result == CogToolResultConstants.Accept 
-                            ? "运行成功" 
-                            : toolBlock.RunStatus.Message;
-                            FireDebug($"[{toolBlock.RunStatus.Result}] {statusMsg}");
-                    }
-                        
-                    // 获取输出参数
-                    foreach(CogToolBlockTerminal terminal in toolBlock.Outputs)
-                    {
-                        if (terminal.Value == null) continue;
-
-                        // 1. 尝试直接作为 double 解析
-                        if (double.TryParse(terminal.Value.ToString(), out double val))
-                        {
-                            results[terminal.Name] = val;
-                        }                
-                    }
-
-                    if (record == null)
-                    {
-                        record = toolBlock.CreateLastRunRecord();
-                    }
-                        
-                    // 2. 校验参数公差
-                    if (step.Parameters != null && step.Parameters.Count > 0)
-                    {
-                        foreach(var param in step.Parameters)
-                        {
-                            if (!param.IsEnabled) continue;
-                                
-                            if (!results.ContainsKey(param.Name))
-                            {
-                                var reason = $"缺少输出参数: {param.Name}";
-                                _logger.Info(reason);
-                                FireDebug(reason);
-                                return (false, "视觉检测异常", results, record, new List<YoloOBBPrediction>());
-                            }
-                                
-                            double actualVal = results[param.Name];
-                            double diff = Math.Abs(actualVal - param.StandardValue);
-                                
-                            if (diff > param.Tolerance)
-                            {
-                                results["ToleranceDiff"] = diff;
-                                var reason = $"参数[{param.Name}]超差: 实际{actualVal:F3} 标准{param.StandardValue:F3} 偏差{diff:F3} > 公差{param.Tolerance}";
-                                _logger.Info(reason);
-                                FireDebug(reason);
-                                return (false, "视觉检测异常", results, record, new List<YoloOBBPrediction>());
-                            }
-                        }
-                        return (true, "参数检测通过", results, record, new List<YoloOBBPrediction>());
-                    }
-                    else
-                    {                            
-                        // 既无参数也无Score，仅判断工具运行状态
-                        if (toolBlock.RunStatus.Result == CogToolResultConstants.Accept)
-                            return (true, "工具运行成功(无参数检查)", results, record, new List<YoloOBBPrediction>());
-                        else
-                        {
-                            var reason = $"工具运行失败: {toolBlock.RunStatus.Message}";
-                            _logger.Info(reason);
-                            FireDebug(reason);
-                            return (false, "视觉检测异常", results, record, new List<YoloOBBPrediction>());
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"VisionPro 运行异常: {ex.Message}");
-                FireDebug($"视觉异常: {ex.Message}");
-                if (EnableDebugPopup && toolBlock != null)
-                {
-                    try
-                    {
-                        if (record == null)
-                        {
-                            record = toolBlock.CreateLastRunRecord();
-                        }
-
-                        ToolBlockDebugReady?.Invoke(this, new ToolBlockDebugEventArgs
-                        {
-                            StepNumber = step.StepNumber,
-                            Step = step,
-                            ToolBlock = toolBlock,
-                            Record = record,
-                            Message = ex.Message
-                        });
-                    }
-                    catch
-                    {
-                    }
-                }
-                return (false, "视觉检测异常", results, null, new List<YoloOBBPrediction>());
-            }         
+            // ToolBlock 功能已移除，统一使用深度学习
+            return await RunDeepLearningLogic(image, step);
         }
 
         string ZIPName = string.Empty;
@@ -1607,6 +1302,59 @@ namespace Audio900.Services
         }
 
         /// <summary>
+        /// 【需求2】尝试自动导出数据集（预测转标注+OK/NG分类采集）
+        /// </summary>
+        private void TryAutoExportDataset(Bitmap image, WorkStep step, bool isPassed, List<YoloOBBPrediction> predictions, Dictionary<string, double> results)
+        {
+            try
+            {
+                // 检查是否启用自动采集
+                if (!EnableAutoDatasetCapture)
+                {
+                    return;
+                }
+
+                // 如果配置为仅采集失败案例，且当前是成功案例，则跳过
+                if (CaptureOnlyFailures && isPassed)
+                {
+                    return;
+                }
+
+                // 质量过滤：检查是否有预测结果且置信度满足要求
+                if (predictions != null && predictions.Count > 0)
+                {
+                    double maxConfidence = predictions.Max(p => p.Confidence);
+                    if (maxConfidence < MinConfidenceForCapture)
+                    {
+                        _logger.Info($"步骤{step.StepNumber}: 跳过采集（最高置信度{maxConfidence:F2} < {MinConfidenceForCapture}）");
+                        return;
+                    }
+                }
+
+                // 调用AutoDatasetExportService导出
+                string exportedPath = _autoDatasetExportService.ExportStepResult(
+                    _currentTemplate,
+                    step,
+                    image,
+                    isPassed,
+                    Params.Instance.SN,
+                    Params.Instance.empNo,
+                    predictions,
+                    results
+                );
+
+                if (!string.IsNullOrEmpty(exportedPath))
+                {
+                    _logger.Info($"步骤{step.StepNumber}: 自动数据集已导出 → {exportedPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, $"步骤{step.StepNumber}: 自动数据集导出失败");
+            }
+        }
+
+        /// <summary>
         /// 判断点是否在旋转矩形 ROI 内
         /// </summary>
         private bool IsPointInRotatedROI(float pointX, float pointY, RectangleF roi, double rotationRadians)
@@ -1645,8 +1393,7 @@ namespace Audio900.Services
     /// </summary>
     public class InspectionResultEventArgs : EventArgs
     {
-        public ICogImage Image { get; set; }
-        public ICogRecord Record { get; set; }
+        public Bitmap Image { get; set; }
         public Dictionary<string, double> Results { get; set; }
         public bool IsPassed { get; set; }
         public WorkStep Step { get; set; }
@@ -1655,18 +1402,5 @@ namespace Audio900.Services
         // 过程检测相关
         public bool IsInROI { get; set; }  // 中心点是否在 ROI 内
         public PointF? CenterPoint { get; set; }  // 检测物体的中心点
-    }
-
-
-    /// <summary>
-    /// 调试模式使用
-    /// </summary>
-    public class ToolBlockDebugEventArgs : EventArgs
-    {
-        public int StepNumber { get; set; }
-        public WorkStep Step { get; set; }
-        public CogToolBlock ToolBlock { get; set; }
-        public ICogRecord Record { get; set; }
-        public string Message { get; set; }
     }
 }
