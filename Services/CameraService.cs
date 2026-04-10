@@ -47,6 +47,7 @@ namespace Audio900.Services
         private VideoRecordingService _videoRecordingService;
         private bool _isInitialized = false;
         private AutoResetEvent _newFrameSignal = new AutoResetEvent(false);
+        private volatile bool _uiProcessingFrame = false;
         #endregion
 
         #region 多相机管理字段
@@ -547,9 +548,9 @@ namespace Audio900.Services
 
                             if (_parentControl != null && !_parentControl.IsDisposed)
                             {
-                                // 丢帧机制：UI还在处理上一帧时，直接丢弃新帧，防止消息队列积压导致卡顿
-                                if (Monitor.TryEnter(_parentControl))
+                                if (!_uiProcessingFrame)
                                 {
+                                    _uiProcessingFrame = true;
                                     Bitmap imageToSend = (Bitmap)bitmap.Clone();
                                     _parentControl.BeginInvoke(new Action(() =>
                                     {
@@ -564,7 +565,8 @@ namespace Audio900.Services
                                         }
                                         finally
                                         {
-                                            try { Monitor.Exit(_parentControl); } catch { }
+                                            imageToSend?.Dispose();
+                                            _uiProcessingFrame = false;
                                         }
                                     }));
                                 }
@@ -668,9 +670,9 @@ namespace Audio900.Services
 
                                 if (_parentControl != null && !_parentControl.IsDisposed)
                                 {
-                                    // 丢帧机制：UI还在处理上一帧时，直接丢弃新帧，防止消息队列积压导致卡顿
-                                    if (Monitor.TryEnter(_parentControl))
+                                    if (!_uiProcessingFrame)
                                     {
+                                        _uiProcessingFrame = true;
                                         Bitmap imageToSend = (Bitmap)bitmap.Clone();
                                         _parentControl.BeginInvoke(new Action(() =>
                                         {
@@ -685,7 +687,8 @@ namespace Audio900.Services
                                             }
                                             finally
                                             {
-                                                try { Monitor.Exit(_parentControl); } catch { }
+                                                imageToSend?.Dispose();
+                                                _uiProcessingFrame = false;
                                             }
                                         }));
                                     }

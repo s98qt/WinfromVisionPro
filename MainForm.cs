@@ -863,10 +863,14 @@ namespace Audio900
 
             if (cameraIndex < _lastArUpdateTime.Length)
                 _lastArUpdateTime[cameraIndex] = DateTime.Now;
+
+            if (!IsHandleCreated || IsDisposed) return;
+
             this.BeginInvoke(new Action(() =>
             {
                 try
                 {
+                    if (cameraIndex >= _cogDisplays.Count) return;
                     var display = _cogDisplays[cameraIndex];
          
                     // 使用轻量级显示控件的新 API
@@ -928,15 +932,9 @@ namespace Audio900
 
                 if (_cogDisplays.Count > 0 && e.Image != null)
                 {
-                    this.BeginInvoke(new Action(() =>
-                    {
-                        var display = _cogDisplays[cameraIndex];
-
-                        LoggerService.Info($"显示检测结果 - 步骤{e?.Step?.StepNumber}, 相机{cameraIndex}, 结果:{(e.IsPassed ? "通过" : "失败")}");
-                        
-                        // 简化处理：仅更新图像，不绘制图形（阶段2会移除 ToolBlock 量测功能）
-                        display.SetImage(e.Image);
-                    }));
+                    var display = _cogDisplays[cameraIndex];
+                    LoggerService.Info($"显示检测结果 - 步骤{e?.Step?.StepNumber}, 相机{cameraIndex}, 结果:{(e.IsPassed ? "通过" : "失败")}");
+                    display.SetImage(e.Image);
                 }
             }
             catch (Exception ex)
