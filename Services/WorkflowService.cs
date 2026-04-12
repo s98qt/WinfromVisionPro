@@ -78,7 +78,7 @@ namespace Audio900.Services
 
         private const double GRAY_DIFF_THRESHOLD = 4.0;  // 灰度差阈值
         private const int STABLE_DURATION_MS = 2000;     // 稳定持续时间（毫秒）
-        bool stepPassed = false;
+        public bool isStopWorkFlow = false; // 是否终止当前流程
         public volatile bool IsArModeRunning = false; 
        
 
@@ -171,7 +171,7 @@ namespace Audio900.Services
                 _currentTemplate = currentTemplate;
                 Params.Instance.SN = productSN;
                 Params.Instance.empNo = employeeID;
-
+                isStopWorkFlow = false;
 
                 RecordingStatusChanged?.Invoke("视频正在录制中...", Color.Red);
 
@@ -231,14 +231,13 @@ namespace Audio900.Services
                         List<WorkStep> batch = new List<WorkStep>();
                         await Task.Run(async () =>
                         {
-
                             foreach (var step in _currentTemplate.WorkSteps)
                             {
+                                if (isStopWorkFlow) break;
                                 batch.Add(step);
                                 if (step.IsArMode)
                                 {
                                     await ExecuteArLoopAsync(step); // 只要是循环检测，那么就是逐步执行
-
                                     batch.Clear();
                                 }
                             }
@@ -248,20 +247,13 @@ namespace Audio900.Services
                                 if (batch == null || batch.Count == 0) return;
                                 await ExecuteStandardCheckAsync(batch[0]);
                                 // 暂时设定最后一步为最终量测
-                                                                          // 动态计算批处理超时时间
-                                                                          //int maxTimeout = batch.Max(s => s.Timeout > 0 ? s.Timeout : 5000);
-                                                                          //int batchTimeout = maxTimeout + 5000; // 加5秒缓冲
-                                                                          //var tasks = batch.Select(step => ExecuteStandardCheckAsync(step)).ToList();
-                                                                          //var whenAllTask = Task.WhenAll(tasks);
-                                                                          //var timeoutTask = Task.Delay(batchTimeout);
-                                                                          //var completedTask = await Task.WhenAny(whenAllTask, timeoutTask);
+
                             }
 
                             //var data = GetData();
                             //// 并行处理两部分数据
                             //var t1 = Task.Run(() => ProcessPart1(data));
                             //var t2 = Task.Run(() => ProcessPart2(data));
-
                             //await Task.WhenAll(t1, t2);
                         });
 
@@ -393,6 +385,7 @@ namespace Audio900.Services
             int loopCount = 0;
             int failureCount = 0;
             const int MAX_CONSECUTIVE_FAILURES = 10;
+            bool _arInferencing = false; // 推理中门控：防止上一帧未完成时重入
 
             try
             {
@@ -427,6 +420,14 @@ namespace Audio900.Services
 
                         try
                         {
+                            if (isStopWorkFlow) break;
+                            // 推理中门控：上一帧推理未结束则跳过本帧，避免重入堆积
+                            if (_arInferencing)
+                            {
+                                await Task.Delay(30);
+                                continue;
+                            }
+
                             // 1. 异步图像采集
                             liveImage = camera.CaptureSnapshotAsync();
 
@@ -442,8 +443,10 @@ namespace Audio900.Services
                                 liveImage = _calibrationService.ApplyCalibration(liveImage, step.CameraIndex);
                             }
 
+                            _arInferencing = true;
                             (bool Passed, string Reason, Dictionary<string, double> Results, List<YoloOBBPrediction> Predictions) result;
                             result = await RunHybridLogic(liveImage, step);
+                            _arInferencing = false;
                             bool isInROI = result.Results.ContainsKey("IsInROI") && result.Results["IsInROI"] > 0;
                             PointF? centerPoint = null;
                             if (result.Results.ContainsKey("CenterX") && result.Results.ContainsKey("CenterY"))
@@ -462,11 +465,8 @@ namespace Audio900.Services
                                 CenterPoint = centerPoint
                             });
 
-                            // 【需求2】AR模式也支持自动数据集导出（当检测通过时采集）
-                            if (result.Passed)
-                            {
-                                TryAutoExportDataset(liveImage, step, true, result.Predictions, result.Results);
-                            }
+                            // 【需求2】AR模式自动数据集导出（isArMode=true 时内部自动过滤NG帧，只存OK帧）
+                            TryAutoExportDataset(liveImage, step, result.Passed, result.Predictions, result.Results, isArMode: true);
 
                             if (result.Passed)
                             {
@@ -485,6 +485,7 @@ namespace Audio900.Services
 
                         catch (Exception ex)
                         {
+                            _arInferencing = false; // 异常时务必重置门控
                             _logger.Error(ex, $"步骤{step.StepNumber}: AR循环异常 (第{loopCount}次)");
                             failureCount++;
 
@@ -498,8 +499,10 @@ namespace Audio900.Services
                             }
                         }
 
-                         await Task.Delay(70);                                             }
-                    });
+                        await Task.Delay(120); // 降频：70ms -> 120ms，降低推理频率                                             }
+                    }
+                });
+
                 
             }
             catch (Exception ex)
@@ -552,14 +555,13 @@ namespace Audio900.Services
 
                 // 持续采集图像，直到图像稳定 AND 匹配分数都满足
                 Bitmap validImage = null;
-                stepPassed = false;
                 int totalCheckCount = 0;
-                const int CHECK_DELAY = 20; // 每次检测间隔（毫秒）
+                const int CHECK_DELAY = 80; // 降频：20ms -> 80ms，降低轮询频率
 
                 while (true)
                 {
                     totalCheckCount++;
-
+                    if (isStopWorkFlow) break;
                     // 使用相机锁防止并发冲突
                     Bitmap currentImage = null;
                     await _cameraLocks[step.CameraIndex].WaitAsync();
@@ -639,8 +641,6 @@ namespace Audio900.Services
                     // 步骤4：判断匹配结果
                     if (inspection.Passed)
                     {
-                        stepPassed = true;
-
                         // 构建保存路径（使用固定的 D 盘路径）
                         string baseFolder = @"D:\data\ZIPImg";
                         string snFolder = Path.Combine(baseFolder, Params.Instance.SN);
@@ -765,7 +765,8 @@ namespace Audio900.Services
 
         public async Task StopWorkflow()
         {
-            stepPassed = true;
+            isStopWorkFlow = true;
+            OverallResultChanged?.Invoke("");
             UpdateStatus($"已终止流程");
             await ChangeState(WorkflowState.Idle);
 
@@ -1303,13 +1304,28 @@ namespace Audio900.Services
 
         /// <summary>
         /// 【需求2】尝试自动导出数据集（预测转标注+OK/NG分类采集）
+        /// isArMode=true 表示 AR 过程检测循环调用；isArMode=false 表示标准单次检测调用
         /// </summary>
-        private void TryAutoExportDataset(Bitmap image, WorkStep step, bool isPassed, List<YoloOBBPrediction> predictions, Dictionary<string, double> results)
+        private void TryAutoExportDataset(Bitmap image, WorkStep step, bool isPassed, List<YoloOBBPrediction> predictions, Dictionary<string, double> results, bool isArMode = false)
         {
             try
             {
                 // 检查是否启用自动采集
                 if (!EnableAutoDatasetCapture)
+                {
+                    return;
+                }
+
+                // 【过滤1】无预测目标的帧不存 —— 空框图片对训练无意义
+                if (predictions == null || predictions.Count == 0)
+                {
+                    _logger.Info($"步骤{step.StepNumber}: 跳过采集（无预测目标）");
+                    return;
+                }
+
+                // 【过滤2】AR循环中的NG帧不存 —— AR模式只保存动作已完成（通过）的帧
+                // AR循环的NG帧只是"等待动作"的中间状态，对训练没有价值且数量极多
+                if (isArMode && !isPassed)
                 {
                     return;
                 }
@@ -1320,15 +1336,12 @@ namespace Audio900.Services
                     return;
                 }
 
-                // 质量过滤：检查是否有预测结果且置信度满足要求
-                if (predictions != null && predictions.Count > 0)
+                // 【过滤3】质量过滤：最高置信度低于阈值的帧不存 —— 避免模糊/低质量标注污染数据集
+                double maxConfidence = predictions.Max(p => p.Confidence);
+                if (maxConfidence < MinConfidenceForCapture)
                 {
-                    double maxConfidence = predictions.Max(p => p.Confidence);
-                    if (maxConfidence < MinConfidenceForCapture)
-                    {
-                        _logger.Info($"步骤{step.StepNumber}: 跳过采集（最高置信度{maxConfidence:F2} < {MinConfidenceForCapture}）");
-                        return;
-                    }
+                    _logger.Info($"步骤{step.StepNumber}: 跳过采集（最高置信度{maxConfidence:F2} < {MinConfidenceForCapture}）");
+                    return;
                 }
 
                 // 调用AutoDatasetExportService导出

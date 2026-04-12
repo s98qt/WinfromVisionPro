@@ -1449,6 +1449,56 @@ namespace Audio900
         }
 
         /// <summary>
+        /// 停止作业流程按钮点击 - 立即终止当前检测并复位状态
+        /// </summary>
+        private async void btnStopWorkflow_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                btnStopWorkflow.Enabled = false;
+                btnStopWorkflow.Text = "停止中...";
+
+                if (_workflowService != null)
+                {
+                    await _workflowService.StopWorkflow();
+                }
+
+                // 复位UI状态
+                _isWorkflowRunning = false;
+                lblResult.Text = "";
+                lblResult.BackColor = System.Drawing.Color.LightGray;
+
+                // 复位所有步骤面板状态
+                if (_currentTemplate != null)
+                {
+                    foreach (var step in _currentTemplate.WorkSteps)
+                    {
+                        step.Status = "";
+                        step.FailureReason = "";
+                    }
+                }
+
+                txtProductSN.Focus();
+                txtProductSN.SelectAll();
+                flpMainSteps.AutoScrollPosition = new Point(0, 0);
+
+                PrepareUiForNewRun();
+
+                UpdateStatus("已停止作业流程，可重新开始");
+                LoggerService.Info("用户手动停止作业流程");
+            }
+            catch (Exception ex)
+            {
+                LoggerService.Error(ex, "停止作业流程失败");
+            }
+            finally
+            {
+                btnStopWorkflow.Enabled = true;
+                btnStopWorkflow.Text = "停止作业";
+            }
+        }
+
+        /// <summary>
         /// 开始检测按钮点击
         /// </summary>
         private  void btnStart_Click(object sender, EventArgs e)
@@ -1473,7 +1523,6 @@ namespace Audio900
                 
                 // 更新UI状态
                 _isWorkflowRunning = true;
-
                 // 启动工作流
                  _workflowService.StartWorkflow(
                     _currentTemplate, 

@@ -45,6 +45,7 @@
             this.chkAutoCapture = new System.Windows.Forms.CheckBox();
             this.chkDebugMode = new System.Windows.Forms.CheckBox();
             this.lblCameraVideoStatus = new System.Windows.Forms.Label();
+            this.btnStopWorkflow = new System.Windows.Forms.Button();
             this.lblImageArea = new System.Windows.Forms.Label();
             this.btnCalibration = new System.Windows.Forms.Button();
             this.btnDataCollection = new System.Windows.Forms.Button();
@@ -103,7 +104,7 @@
             this.tlpInputFields.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 20F));
             this.tlpInputFields.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 20F));
             this.tlpInputFields.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 20F));
-            this.tlpInputFields.Size = new System.Drawing.Size(298, 63);
+            this.tlpInputFields.Size = new System.Drawing.Size(293, 63);
             this.tlpInputFields.TabIndex = 1;
             // 
             // lblProductSN
@@ -125,7 +126,7 @@
             this.txtProductSN.Location = new System.Drawing.Point(55, 2);
             this.txtProductSN.Margin = new System.Windows.Forms.Padding(1, 2, 1, 2);
             this.txtProductSN.Name = "txtProductSN";
-            this.txtProductSN.Size = new System.Drawing.Size(95, 23);
+            this.txtProductSN.Size = new System.Drawing.Size(93, 23);
             this.txtProductSN.TabIndex = 1;
             // 
             // label2
@@ -133,7 +134,7 @@
             this.label2.Anchor = System.Windows.Forms.AnchorStyles.Left;
             this.label2.AutoSize = true;
             this.label2.Font = new System.Drawing.Font("微软雅黑", 9F);
-            this.label2.Location = new System.Drawing.Point(152, 1);
+            this.label2.Location = new System.Drawing.Point(150, 1);
             this.label2.Margin = new System.Windows.Forms.Padding(1, 0, 1, 0);
             this.label2.Name = "label2";
             this.label2.Size = new System.Drawing.Size(47, 17);
@@ -144,10 +145,10 @@
             // 
             this.txtViewNo.Dock = System.Windows.Forms.DockStyle.Fill;
             this.txtViewNo.Font = new System.Drawing.Font("微软雅黑", 9F);
-            this.txtViewNo.Location = new System.Drawing.Point(201, 2);
+            this.txtViewNo.Location = new System.Drawing.Point(199, 2);
             this.txtViewNo.Margin = new System.Windows.Forms.Padding(1, 2, 1, 2);
             this.txtViewNo.Name = "txtViewNo";
-            this.txtViewNo.Size = new System.Drawing.Size(96, 23);
+            this.txtViewNo.Size = new System.Drawing.Size(93, 23);
             this.txtViewNo.TabIndex = 3;
             // 
             // lblEmployeeId
@@ -169,7 +170,7 @@
             this.txtEmployeeId.Location = new System.Drawing.Point(55, 22);
             this.txtEmployeeId.Margin = new System.Windows.Forms.Padding(1, 2, 1, 2);
             this.txtEmployeeId.Name = "txtEmployeeId";
-            this.txtEmployeeId.Size = new System.Drawing.Size(95, 23);
+            this.txtEmployeeId.Size = new System.Drawing.Size(93, 23);
             this.txtEmployeeId.TabIndex = 5;
             // 
             // label3
@@ -177,7 +178,7 @@
             this.label3.Anchor = System.Windows.Forms.AnchorStyles.Left;
             this.label3.AutoSize = true;
             this.label3.Font = new System.Drawing.Font("微软雅黑", 9F);
-            this.label3.Location = new System.Drawing.Point(152, 21);
+            this.label3.Location = new System.Drawing.Point(150, 21);
             this.label3.Margin = new System.Windows.Forms.Padding(1, 0, 1, 0);
             this.label3.Name = "label3";
             this.label3.Size = new System.Drawing.Size(35, 17);
@@ -188,10 +189,10 @@
             // 
             this.txtWorkOrder.Dock = System.Windows.Forms.DockStyle.Fill;
             this.txtWorkOrder.Font = new System.Drawing.Font("微软雅黑", 9F);
-            this.txtWorkOrder.Location = new System.Drawing.Point(201, 22);
+            this.txtWorkOrder.Location = new System.Drawing.Point(199, 22);
             this.txtWorkOrder.Margin = new System.Windows.Forms.Padding(1, 2, 1, 2);
             this.txtWorkOrder.Name = "txtWorkOrder";
-            this.txtWorkOrder.Size = new System.Drawing.Size(96, 23);
+            this.txtWorkOrder.Size = new System.Drawing.Size(93, 23);
             this.txtWorkOrder.TabIndex = 7;
             // 
             // label4
@@ -214,7 +215,7 @@
             this.txtViewName.Margin = new System.Windows.Forms.Padding(1, 2, 1, 2);
             this.txtViewName.Name = "txtViewName";
             this.txtViewName.ReadOnly = true;
-            this.txtViewName.Size = new System.Drawing.Size(95, 23);
+            this.txtViewName.Size = new System.Drawing.Size(93, 23);
             this.txtViewName.TabIndex = 9;
             // 
             // label5
@@ -222,7 +223,7 @@
             this.label5.Anchor = System.Windows.Forms.AnchorStyles.Left;
             this.label5.AutoSize = true;
             this.label5.Font = new System.Drawing.Font("微软雅黑", 9F);
-            this.label5.Location = new System.Drawing.Point(152, 43);
+            this.label5.Location = new System.Drawing.Point(150, 43);
             this.label5.Margin = new System.Windows.Forms.Padding(1, 0, 1, 0);
             this.label5.Name = "label5";
             this.label5.Size = new System.Drawing.Size(47, 17);
@@ -233,11 +234,11 @@
             // 
             this.txtFileName.Dock = System.Windows.Forms.DockStyle.Fill;
             this.txtFileName.Font = new System.Drawing.Font("微软雅黑", 9F);
-            this.txtFileName.Location = new System.Drawing.Point(201, 42);
+            this.txtFileName.Location = new System.Drawing.Point(199, 42);
             this.txtFileName.Margin = new System.Windows.Forms.Padding(1, 2, 1, 2);
             this.txtFileName.Name = "txtFileName";
             this.txtFileName.ReadOnly = true;
-            this.txtFileName.Size = new System.Drawing.Size(96, 23);
+            this.txtFileName.Size = new System.Drawing.Size(93, 23);
             this.txtFileName.TabIndex = 11;
             // 
             // panelTop
@@ -246,6 +247,7 @@
             this.panelTop.Controls.Add(this.chkAutoCapture);
             this.panelTop.Controls.Add(this.chkDebugMode);
             this.panelTop.Controls.Add(this.lblCameraVideoStatus);
+            this.panelTop.Controls.Add(this.btnStopWorkflow);
             this.panelTop.Controls.Add(this.lblImageArea);
             this.panelTop.Controls.Add(this.btnCalibration);
             this.panelTop.Controls.Add(this.btnDataCollection);
@@ -262,10 +264,10 @@
             this.chkAutoCapture.AutoSize = true;
             this.chkAutoCapture.Font = new System.Drawing.Font("微软雅黑", 10.5F);
             this.chkAutoCapture.ForeColor = System.Drawing.Color.White;
-            this.chkAutoCapture.Location = new System.Drawing.Point(420, 6);
+            this.chkAutoCapture.Location = new System.Drawing.Point(434, 6);
             this.chkAutoCapture.Margin = new System.Windows.Forms.Padding(1, 2, 1, 2);
             this.chkAutoCapture.Name = "chkAutoCapture";
-            this.chkAutoCapture.Size = new System.Drawing.Size(98, 24);
+            this.chkAutoCapture.Size = new System.Drawing.Size(84, 24);
             this.chkAutoCapture.TabIndex = 20;
             this.chkAutoCapture.Text = "自动采图";
             this.chkAutoCapture.UseVisualStyleBackColor = true;
@@ -276,7 +278,7 @@
             this.chkDebugMode.AutoSize = true;
             this.chkDebugMode.Font = new System.Drawing.Font("微软雅黑", 10.5F);
             this.chkDebugMode.ForeColor = System.Drawing.Color.White;
-            this.chkDebugMode.Location = new System.Drawing.Point(621, 6);
+            this.chkDebugMode.Location = new System.Drawing.Point(348, 6);
             this.chkDebugMode.Margin = new System.Windows.Forms.Padding(1, 2, 1, 2);
             this.chkDebugMode.Name = "chkDebugMode";
             this.chkDebugMode.Size = new System.Drawing.Size(84, 24);
@@ -299,6 +301,22 @@
             this.lblCameraVideoStatus.Text = "视频等待录制";
             this.lblCameraVideoStatus.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
             // 
+            // btnStopWorkflow
+            // 
+            this.btnStopWorkflow.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.btnStopWorkflow.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(244)))), ((int)(((byte)(67)))), ((int)(((byte)(54)))));
+            this.btnStopWorkflow.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnStopWorkflow.Font = new System.Drawing.Font("微软雅黑", 10.5F);
+            this.btnStopWorkflow.ForeColor = System.Drawing.Color.White;
+            this.btnStopWorkflow.Location = new System.Drawing.Point(622, 2);
+            this.btnStopWorkflow.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
+            this.btnStopWorkflow.Name = "btnStopWorkflow";
+            this.btnStopWorkflow.Size = new System.Drawing.Size(87, 30);
+            this.btnStopWorkflow.TabIndex = 21;
+            this.btnStopWorkflow.Text = "停止作业";
+            this.btnStopWorkflow.UseVisualStyleBackColor = false;
+            this.btnStopWorkflow.Click += new System.EventHandler(this.btnStopWorkflow_Click);
+            // 
             // lblImageArea
             // 
             this.lblImageArea.AutoSize = true;
@@ -319,7 +337,7 @@
             this.btnCalibration.Font = new System.Drawing.Font("微软雅黑", 10.5F);
             this.btnCalibration.ForeColor = System.Drawing.Color.White;
             this.btnCalibration.Location = new System.Drawing.Point(721, 2);
-            this.btnCalibration.Margin = new System.Windows.Forms.Padding(2);
+            this.btnCalibration.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.btnCalibration.Name = "btnCalibration";
             this.btnCalibration.Size = new System.Drawing.Size(87, 30);
             this.btnCalibration.TabIndex = 19;
@@ -335,7 +353,7 @@
             this.btnDataCollection.Font = new System.Drawing.Font("微软雅黑", 10.5F);
             this.btnDataCollection.ForeColor = System.Drawing.Color.White;
             this.btnDataCollection.Location = new System.Drawing.Point(812, 2);
-            this.btnDataCollection.Margin = new System.Windows.Forms.Padding(2);
+            this.btnDataCollection.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.btnDataCollection.Name = "btnDataCollection";
             this.btnDataCollection.Size = new System.Drawing.Size(87, 30);
             this.btnDataCollection.TabIndex = 18;
@@ -360,7 +378,7 @@
             // 
             this.splitContainer1.Panel2.Controls.Add(this.panelRight);
             this.splitContainer1.Size = new System.Drawing.Size(905, 479);
-            this.splitContainer1.SplitterDistance = 593;
+            this.splitContainer1.SplitterDistance = 598;
             this.splitContainer1.SplitterWidth = 2;
             this.splitContainer1.TabIndex = 1;
             // 
@@ -372,7 +390,7 @@
             this.panelCameraDisplay.Location = new System.Drawing.Point(0, 0);
             this.panelCameraDisplay.Margin = new System.Windows.Forms.Padding(1, 2, 1, 2);
             this.panelCameraDisplay.Name = "panelCameraDisplay";
-            this.panelCameraDisplay.Size = new System.Drawing.Size(593, 457);
+            this.panelCameraDisplay.Size = new System.Drawing.Size(598, 457);
             this.panelCameraDisplay.TabIndex = 0;
             // 
             // lblNoCamera
@@ -381,7 +399,7 @@
             this.lblNoCamera.AutoSize = true;
             this.lblNoCamera.Font = new System.Drawing.Font("微软雅黑", 18F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
             this.lblNoCamera.ForeColor = System.Drawing.Color.White;
-            this.lblNoCamera.Location = new System.Drawing.Point(244, 219);
+            this.lblNoCamera.Location = new System.Drawing.Point(247, 219);
             this.lblNoCamera.Margin = new System.Windows.Forms.Padding(1, 0, 1, 0);
             this.lblNoCamera.Name = "lblNoCamera";
             this.lblNoCamera.Size = new System.Drawing.Size(158, 31);
@@ -397,14 +415,14 @@
             this.statusStrip1.Location = new System.Drawing.Point(0, 457);
             this.statusStrip1.Name = "statusStrip1";
             this.statusStrip1.Padding = new System.Windows.Forms.Padding(1, 0, 7, 0);
-            this.statusStrip1.Size = new System.Drawing.Size(593, 22);
+            this.statusStrip1.Size = new System.Drawing.Size(598, 22);
             this.statusStrip1.TabIndex = 1;
             this.statusStrip1.Text = "statusStrip1";
             // 
             // toolStripStatusLabel1
             // 
             this.toolStripStatusLabel1.Name = "toolStripStatusLabel1";
-            this.toolStripStatusLabel1.Size = new System.Drawing.Size(526, 17);
+            this.toolStripStatusLabel1.Size = new System.Drawing.Size(531, 17);
             this.toolStripStatusLabel1.Spring = true;
             this.toolStripStatusLabel1.Text = "系统就绪";
             this.toolStripStatusLabel1.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
@@ -427,10 +445,10 @@
             this.panelRight.Controls.Add(this.lblResult);
             this.panelRight.Dock = System.Windows.Forms.DockStyle.Fill;
             this.panelRight.Location = new System.Drawing.Point(0, 0);
-            this.panelRight.Margin = new System.Windows.Forms.Padding(2);
+            this.panelRight.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.panelRight.Name = "panelRight";
-            this.panelRight.Padding = new System.Windows.Forms.Padding(3);
-            this.panelRight.Size = new System.Drawing.Size(310, 479);
+            this.panelRight.Padding = new System.Windows.Forms.Padding(3, 3, 3, 3);
+            this.panelRight.Size = new System.Drawing.Size(305, 479);
             this.panelRight.TabIndex = 0;
             // 
             // cmbTemplates
@@ -441,9 +459,9 @@
             this.cmbTemplates.Font = new System.Drawing.Font("微软雅黑", 9F);
             this.cmbTemplates.FormattingEnabled = true;
             this.cmbTemplates.Location = new System.Drawing.Point(2, 2);
-            this.cmbTemplates.Margin = new System.Windows.Forms.Padding(2);
+            this.cmbTemplates.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.cmbTemplates.Name = "cmbTemplates";
-            this.cmbTemplates.Size = new System.Drawing.Size(297, 25);
+            this.cmbTemplates.Size = new System.Drawing.Size(292, 25);
             this.cmbTemplates.TabIndex = 0;
             this.cmbTemplates.SelectedIndexChanged += new System.EventHandler(this.cmbTemplates_SelectedIndexChanged);
             // 
@@ -456,9 +474,9 @@
             this.btnTemplateManage.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Bold);
             this.btnTemplateManage.ForeColor = System.Drawing.Color.White;
             this.btnTemplateManage.Location = new System.Drawing.Point(3, 95);
-            this.btnTemplateManage.Margin = new System.Windows.Forms.Padding(2);
+            this.btnTemplateManage.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.btnTemplateManage.Name = "btnTemplateManage";
-            this.btnTemplateManage.Size = new System.Drawing.Size(296, 28);
+            this.btnTemplateManage.Size = new System.Drawing.Size(290, 28);
             this.btnTemplateManage.TabIndex = 2;
             this.btnTemplateManage.Text = "模板管理 ▼";
             this.btnTemplateManage.UseVisualStyleBackColor = false;
@@ -484,9 +502,9 @@
             this.flpMainSteps.BackColor = System.Drawing.Color.WhiteSmoke;
             this.flpMainSteps.FlowDirection = System.Windows.Forms.FlowDirection.TopDown;
             this.flpMainSteps.Location = new System.Drawing.Point(1, 148);
-            this.flpMainSteps.Margin = new System.Windows.Forms.Padding(2);
+            this.flpMainSteps.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.flpMainSteps.Name = "flpMainSteps";
-            this.flpMainSteps.Size = new System.Drawing.Size(303, 240);
+            this.flpMainSteps.Size = new System.Drawing.Size(297, 240);
             this.flpMainSteps.TabIndex = 4;
             this.flpMainSteps.WrapContents = false;
             // 
@@ -496,9 +514,9 @@
             this.panelMesStatus.Controls.Add(this.lblMesStatus);
             this.panelMesStatus.Dock = System.Windows.Forms.DockStyle.Bottom;
             this.panelMesStatus.Location = new System.Drawing.Point(3, 392);
-            this.panelMesStatus.Margin = new System.Windows.Forms.Padding(2);
+            this.panelMesStatus.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.panelMesStatus.Name = "panelMesStatus";
-            this.panelMesStatus.Size = new System.Drawing.Size(304, 27);
+            this.panelMesStatus.Size = new System.Drawing.Size(299, 27);
             this.panelMesStatus.TabIndex = 16;
             // 
             // lblMesStatus
@@ -509,7 +527,7 @@
             this.lblMesStatus.Location = new System.Drawing.Point(0, 0);
             this.lblMesStatus.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblMesStatus.Name = "lblMesStatus";
-            this.lblMesStatus.Size = new System.Drawing.Size(304, 27);
+            this.lblMesStatus.Size = new System.Drawing.Size(299, 27);
             this.lblMesStatus.TabIndex = 0;
             this.lblMesStatus.Text = "MES上传等待执行";
             this.lblMesStatus.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
@@ -523,7 +541,7 @@
             this.lblResult.Location = new System.Drawing.Point(3, 419);
             this.lblResult.Margin = new System.Windows.Forms.Padding(1, 0, 1, 0);
             this.lblResult.Name = "lblResult";
-            this.lblResult.Size = new System.Drawing.Size(304, 57);
+            this.lblResult.Size = new System.Drawing.Size(299, 57);
             this.lblResult.TabIndex = 17;
             this.lblResult.Text = "PASS";
             this.lblResult.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
@@ -604,6 +622,7 @@
         private System.Windows.Forms.TableLayoutPanel tlpInputFields;
         private System.Windows.Forms.CheckBox chkDebugMode;
         private System.Windows.Forms.Button btnCalibration;
+        private System.Windows.Forms.Button btnStopWorkflow;
         private System.Windows.Forms.CheckBox chkAutoCapture;
     }
 }

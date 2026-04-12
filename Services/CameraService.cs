@@ -565,7 +565,7 @@ namespace Audio900.Services
                                         }
                                         finally
                                         {
-                                            imageToSend?.Dispose();
+                                            // imageToSend?.Dispose(); // 提前销毁图像会导致影像区没有画面
                                             _uiProcessingFrame = false;
                                         }
                                     }));
@@ -687,7 +687,7 @@ namespace Audio900.Services
                                             }
                                             finally
                                             {
-                                                imageToSend?.Dispose();
+                                                //imageToSend?.Dispose();
                                                 _uiProcessingFrame = false;
                                             }
                                         }));
