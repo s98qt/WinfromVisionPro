@@ -286,7 +286,7 @@
     </Compile>
     <Compile Include="Views\DataCollectionWindow.Designer.cs" />
     <Compile Include="Views\SetROIWindow.cs">
-      <SubType>Form</SubType>
+      <SubType>Component</SubType>
     </Compile>
     <Compile Include="Views\SetROIWindow.Designer.cs" />
     <Compile Include="Views\StepControl.cs">

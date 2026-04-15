@@ -94,7 +94,7 @@ namespace Audio900.Services
                 Results = results ?? new Dictionary<string, double>()
             };
 
-            File.WriteAllText(metaPath, JsonConvert.SerializeObject(meta, Formatting.Indented), Encoding.UTF8);
+            File.WriteAllText(metaPath, JsonConvert.SerializeObject(meta, Formatting.Indented), new UTF8Encoding(false));
             return imagePath;
         }
 
@@ -133,7 +133,7 @@ namespace Audio900.Services
                 }
             }
 
-            File.WriteAllLines(labelPath, lines, Encoding.UTF8);
+            File.WriteAllLines(labelPath, lines, new UTF8Encoding(false));
         }
 
         private void SaveClassesFile(string classesPath, List<YoloOBBPrediction> predictions)
@@ -168,7 +168,7 @@ namespace Audio900.Services
 
                 if (changed)
                 {
-                    File.WriteAllLines(classesPath, existing, Encoding.UTF8);
+                    File.WriteAllLines(classesPath, existing, new UTF8Encoding(false));
                 }
             }
         }
@@ -247,7 +247,7 @@ namespace Audio900.Services
                 Results = results ?? new Dictionary<string, double>()
             };
 
-            File.WriteAllText(metaPath, JsonConvert.SerializeObject(meta, Formatting.Indented), Encoding.UTF8);
+            File.WriteAllText(metaPath, JsonConvert.SerializeObject(meta, Formatting.Indented), new UTF8Encoding(false));
             return imagePath;
         }
 
@@ -266,13 +266,16 @@ namespace Audio900.Services
                         .Select(pt => new[] { (double)pt.X, (double)pt.Y })
                         .ToList();
 
+                    double directionRad = pred.Angle * Math.PI / 180.0;
+
                     shapes.Add(new
                     {
                         label = pred.Label ?? "defect",
                         points = points,
                         group_id = (int?)null,
                         description = "",
-                        shape_type = "polygon",
+                        shape_type = "rotation",
+                        direction = directionRad,
                         flags = new { },
                         attributes = new { }
                     });
@@ -290,7 +293,7 @@ namespace Audio900.Services
                 imageWidth = imageWidth
             };
 
-            File.WriteAllText(jsonPath, JsonConvert.SerializeObject(json, Formatting.Indented), Encoding.UTF8);
+            File.WriteAllText(jsonPath, JsonConvert.SerializeObject(json, Formatting.Indented), new UTF8Encoding(false));
         }
 
         private static string SanitizePathSegment(string value)

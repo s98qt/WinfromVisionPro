@@ -261,6 +261,14 @@ namespace Audio900.Services
                     }
 
                     IsArModeRunning = false;
+
+                    // 若用户已手动停止，跳过后续保存/MES/结果上报
+                    if (isStopWorkFlow)
+                    {
+                        _videoRecordingService.StopRecording();
+                        return;
+                    }
+
                     // 保存数据
                     ChangeState(WorkflowState.SavingData);
                     SaveImageAndVideo();
