@@ -33,8 +33,14 @@ namespace Audio900.Controls
             this.Image = image;
         }
 
-        public void SetDetectionResults(List<YoloOBBPrediction> predictions, RectangleF roi, double roiRotation, string stepNumber, bool isInROI)
+        public void SetDetectionResults(List<YoloOBBPrediction> predictions, RectangleF roi, double roiRotation, string stepNumber, bool isInROI, Bitmap image = null)
         {
+            // 顺便接手底图：AR 模式下底图也要每帧刷新，同时避免上层 Clone 泄漏
+            if (image != null)
+            {
+                SetImage(image);
+            }
+
             _detectionBoxes.Clear();
             _roi = roi;
             _roiRotation = roiRotation;

@@ -48,6 +48,9 @@ namespace Audio900.Services
         private bool _isInitialized = false;
         private AutoResetEvent _newFrameSignal = new AutoResetEvent(false);
         private volatile bool _uiProcessingFrame = false;
+        // UI 门闸超时保护：BeginInvoke 回调超过该时长还没回调时强制放行，避免画面永久定格
+        private long _uiProcessingStartedTicks = 0;
+        private const int UI_PROCESSING_TIMEOUT_MS = 500;
         #endregion
 
         #region 多相机管理字段
@@ -466,6 +469,34 @@ namespace Audio900.Services
 
         #region 图像采集
         /// <summary>
+        /// 尝试占用 UI 门闸：空闲时直接放行并记下时间戳；占用中但已超时（UI 卡死）时强制放行。
+        /// 这样避免 BeginInvoke 回调因 UI 线程卡死迟迟不跑时，采集线程再也不向 UI 送帧导致画面永久定格。
+        /// </summary>
+        private bool TryAcquireUiSlot()
+        {
+            long now = DateTime.UtcNow.Ticks;
+
+            if (!_uiProcessingFrame)
+            {
+                _uiProcessingFrame = true;
+                Interlocked.Exchange(ref _uiProcessingStartedTicks, now);
+                return true;
+            }
+
+            long startedTicks = Interlocked.Read(ref _uiProcessingStartedTicks);
+            long elapsedMs = (now - startedTicks) / TimeSpan.TicksPerMillisecond;
+            if (elapsedMs > UI_PROCESSING_TIMEOUT_MS)
+            {
+                // UI 回调超时未归还门闸，强制放行。
+                // 旧回调后续若跑完，它只会再次把 _uiProcessingFrame 置 false（幂等），不影响新帧流转。
+                Interlocked.Exchange(ref _uiProcessingStartedTicks, now);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// 开始采集实时图像
         /// </summary>
         public void StartCapture()
@@ -548,9 +579,8 @@ namespace Audio900.Services
 
                             if (_parentControl != null && !_parentControl.IsDisposed)
                             {
-                                if (!_uiProcessingFrame)
+                                if (TryAcquireUiSlot())
                                 {
-                                    _uiProcessingFrame = true;
                                     Bitmap imageToSend = (Bitmap)bitmap.Clone();
                                     _parentControl.BeginInvoke(new Action(() =>
                                     {
@@ -565,7 +595,8 @@ namespace Audio900.Services
                                         }
                                         finally
                                         {
-                                            // imageToSend?.Dispose(); // 提前销毁图像会导致影像区没有画面
+                                            // imageToSend 所有权已交接给 UI 侧：要么 display.SetImage 接手，
+                                            // 要么 UI 侧 finally 里 Dispose。这里不再重复 Dispose。
                                             _uiProcessingFrame = false;
                                         }
                                     }));
@@ -670,9 +701,8 @@ namespace Audio900.Services
 
                                 if (_parentControl != null && !_parentControl.IsDisposed)
                                 {
-                                    if (!_uiProcessingFrame)
+                                    if (TryAcquireUiSlot())
                                     {
-                                        _uiProcessingFrame = true;
                                         Bitmap imageToSend = (Bitmap)bitmap.Clone();
                                         _parentControl.BeginInvoke(new Action(() =>
                                         {
@@ -687,7 +717,8 @@ namespace Audio900.Services
                                             }
                                             finally
                                             {
-                                                //imageToSend?.Dispose();
+                                                // imageToSend 所有权已交接给 UI 侧：要么 display.SetImage 接手，
+                                                // 要么 UI 侧 finally 里 Dispose。这里不再重复 Dispose。
                                                 _uiProcessingFrame = false;
                                             }
                                         }));

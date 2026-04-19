@@ -85,6 +85,11 @@ namespace Audio900
             chkAutoCapture.CheckedChanged += (s, e) =>
             {
                 _autoCaptureEnabled = chkAutoCapture.Checked;
+                // 和 WorkflowService 的自动采集开关联动（后者负责真正写盘，已改为后台异步+限流）
+                if (_workflowService != null)
+                {
+                    _workflowService.EnableAutoDatasetCapture = chkAutoCapture.Checked;
+                }
                 LoggerService.Info($"自动采图: {(_autoCaptureEnabled ? "已开启" : "已关闭")}");
             };
 
@@ -607,36 +612,15 @@ namespace Audio900
         /// </summary>
         private void OnCameraImageCaptured(object sender, CameraImageEventArgs e)
         {
+            // Image 所有权规则：每一条分支要么把 Bitmap 交给 display.SetImage（由其在下一帧自动 Dispose），
+            // 要么在本函数 finally 里 Dispose。否则每帧一张泄漏。
+            bool imageTransferred = false;
             try
             {
-                //if (_workflowService.IsArModeRunning)
-                //{
-                //    return;
-                //}
-
-                // 限制 UI 刷新频率为约 15 FPS (60ms)
-                //if (!_lastUiUpdateByCameraIndex.ContainsKey(e.CameraIndex))
-                //{
-                //    _lastUiUpdateByCameraIndex[e.CameraIndex] = DateTime.MinValue;
-                //}
-
-                //if ((DateTime.Now - _lastUiUpdateByCameraIndex[e.CameraIndex]).TotalMilliseconds < 60)
-                //{
-                //    return; // 距离上次刷新不足60ms，跳过
-                //}
-                //_lastUiUpdateByCameraIndex[e.CameraIndex] = DateTime.Now;
-
-                //// AR模式看门狗检查
-                //if (e.CameraIndex >= 0 && e.CameraIndex < _lastArUpdateTime.Length)
-                //{
-                //    if ((DateTime.Now - _lastArUpdateTime[e.CameraIndex]).TotalMilliseconds < 500)
-                //    {
-                //        return;
-                //    }
-                //}
-
                 if (InvokeRequired)
                 {
+                    // BeginInvoke 后会重新触发本函数，那次调用负责释放
+                    imageTransferred = true;
                     BeginInvoke(new EventHandler<CameraImageEventArgs>(OnCameraImageCaptured), sender, e);
                     return;
                 }
@@ -645,6 +629,17 @@ namespace Audio900
                 {
                     return;
                 }
+
+                // 限制 UI 刷新频率为约 15 FPS (60ms)，降低 GDI+ 压力
+                if (!_lastUiUpdateByCameraIndex.ContainsKey(e.CameraIndex))
+                {
+                    _lastUiUpdateByCameraIndex[e.CameraIndex] = DateTime.MinValue;
+                }
+                if ((DateTime.Now - _lastUiUpdateByCameraIndex[e.CameraIndex]).TotalMilliseconds < 60)
+                {
+                    return; // 节流跳过，e.Image 由 finally Dispose
+                }
+                _lastUiUpdateByCameraIndex[e.CameraIndex] = DateTime.Now;
 
                 // 检查该相机是否处于冻结状态（正在显示检测结果）
                 if (_freezeUntilByCameraIndex.ContainsKey(e.CameraIndex))
@@ -669,12 +664,19 @@ namespace Audio900
 
                 var display = _cogDisplays[e.CameraIndex];
                 display.SetImage(e.Image);
-
-               
+                imageTransferred = true;
             }
             catch (Exception ex)
             {
                 LoggerService.Error(ex, "更新相机图像失败");
+            }
+            finally
+            {
+                // 未交接给 display 时必须释放，否则每帧泄漏一张全尺寸 Bitmap（6MB@1080p）
+                if (!imageTransferred && e?.Image != null)
+                {
+                    try { e.Image.Dispose(); } catch { }
+                }
             }
         }
 
@@ -854,35 +856,53 @@ namespace Audio900
         // 用于Yolo进行过程检测的显示
         private void OnYoloDetection(object sender, InspectionResultEventArgs e)
         {
-            if (e?.Step == null) return;
+            // Image 所有权规则：事件里的 Image 是 WorkflowService 的 Clone，
+            // 本函数必须在所有路径保证被 display 接手或显式 Dispose，否则 AR 模式下每帧泄漏。
+            if (e?.Step == null)
+            {
+                e?.Image?.Dispose();
+                return;
+            }
             int cameraIndex = e.Step.CameraIndex;
-            if (cameraIndex < 0 || cameraIndex >= _cogDisplays.Count) return;
+            if (cameraIndex < 0 || cameraIndex >= _cogDisplays.Count)
+            {
+                e.Image?.Dispose();
+                return;
+            }
 
-            // 后台自动采图（当前已在后台线程，直接调用）
+            // 后台自动采图（当前已在后台线程，直接调用，内部会 Clone 后独立保存）
             TryAutoCapture(e);
 
             if (cameraIndex < _lastArUpdateTime.Length)
                 _lastArUpdateTime[cameraIndex] = DateTime.Now;
 
-            if (!IsHandleCreated || IsDisposed) return;
+            if (!IsHandleCreated || IsDisposed)
+            {
+                e.Image?.Dispose();
+                return;
+            }
 
             this.BeginInvoke(new Action(() =>
             {
+                bool imageTransferred = false;
                 try
                 {
                     if (cameraIndex >= _cogDisplays.Count) return;
                     var display = _cogDisplays[cameraIndex];
-         
+
                     // 使用轻量级显示控件的新 API
                     if (e.Predictions != null && e.Predictions.Count > 0)
                     {
+                        // 把底图也交给 SetDetectionResults，AR 模式下底图会每帧刷新
                         display.SetDetectionResults(
-                            e.Predictions, 
-                            e.Step.DetectionROI, 
-                            e.Step.DetectionROIRotation, 
-                            e.Step.StepNumber.ToString(), 
-                            e.IsInROI);
-                        
+                            e.Predictions,
+                            e.Step.DetectionROI,
+                            e.Step.DetectionROIRotation,
+                            e.Step.StepNumber.ToString(),
+                            e.IsInROI,
+                            e.Image);
+                        imageTransferred = e.Image != null;
+
                         // 如果步骤通过，播放提示音
                         if (e.IsPassed && e.IsInROI)
                         {
@@ -893,9 +913,17 @@ namespace Audio900
                     {
                         // 没有检测结果时，只更新图像
                         display.SetImage(e.Image);
+                        imageTransferred = true;
                     }
                 }
                 catch { }
+                finally
+                {
+                    if (!imageTransferred && e.Image != null)
+                    {
+                        try { e.Image.Dispose(); } catch { }
+                    }
+                }
             }));
         }
 
@@ -966,64 +994,13 @@ namespace Audio900
         }
 
         /// <summary>
-        /// 后台自动采图：将检测事件中的图像和标签按OK/NG分类保存到本地
-        /// 从事件回调线程调用，不阻塞UI
+        /// 已改为 no-op：真正的写盘逻辑由 WorkflowService.TryAutoExportDataset 负责（后台异步 + 限流）。
+        /// 保留本函数只是兼容原调用点。以前这里会 Clone+SHA256 指纹+PNG 编码+Task.Run 保存，
+        /// 和 WorkflowService 那条同时跑会导致同一帧写盘两次、GDI+ 压力翻倍，是 AR 模式下画面卡死的放大器。
         /// </summary>
         private void TryAutoCapture(InspectionResultEventArgs e)
         {
-            if (!_autoCaptureEnabled) return;
-            if (e?.Image == null || e?.Step == null || _currentTemplate == null || _autoDatasetExportService == null) return;
-
-            // 在当前后台线程上克隆 Bitmap
-            Bitmap bmp;
-            try
-            {
-                bmp = (Bitmap)e.Image.Clone();
-            }
-            catch (Exception ex)
-            {
-                LoggerService.Warn($"自动采图转Bitmap失败: {ex.Message}");
-                return;
-            }
-
-            var decision = BuildAutoCaptureDecision(e);
-            if (decision == null)
-            {
-                bmp.Dispose();
-                return;
-            }
-
-            string fingerprint = ComputeCaptureFingerprint(bmp);
-            if (ShouldSkipDuplicateCapture(e.Step.StepNumber, fingerprint))
-            {
-                bmp.Dispose();
-                return;
-            }
-
-            var template = _currentTemplate;
-            var step = e.Step;
-            var isPassed = e.IsPassed;
-            var predictions = e.Predictions;
-            var results = BuildAutoCaptureResults(e.Results, decision, fingerprint);
-            var sn = Params.Instance.SN;
-            var empId = Params.Instance.empNo;
-
-            Task.Run(() =>
-            {
-                try
-                {
-                    _autoDatasetExportService.ExportFromBitmap(
-                        template, step, bmp, isPassed, sn, empId, predictions, results);
-                }
-                catch (Exception ex)
-                {
-                    LoggerService.Error(ex, $"自动采图保存失败，步骤{step.StepNumber}，分组:{decision.BucketName}");
-                }
-                finally
-                {
-                    bmp.Dispose();
-                }
-            });
+            // no-op：留空即可，不能 Dispose e.Image（所有权仍在调用方的后续逻辑里）
         }
 
         private Dictionary<string, double> BuildAutoCaptureResults(Dictionary<string, double> results, AutoCaptureDecision decision, string fingerprint)

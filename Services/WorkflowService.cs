@@ -58,10 +58,13 @@ namespace Audio900.Services
 
         // 自动数据集导出服务 (需求2)
         private AutoDatasetExportService _autoDatasetExportService;
-        
-        // 配置项：是否启用自动数据集采集
-        public bool EnableAutoDatasetCapture { get; set; } = true;
-        
+
+        // 后台写盘限流：至多 2 个导出任务同时跑，拿不到令牌的直接跳过，避免 AR 循环被 IO 阻塞或任务队列无限堆积
+        private readonly SemaphoreSlim _autoExportSemaphore = new SemaphoreSlim(2, 2);
+
+        // 配置项：是否启用自动数据集采集（默认关闭，由 UI 勾选"自动采图"时打开）
+        public bool EnableAutoDatasetCapture { get; set; } = false;
+
         // 配置项：最低置信度阈值（低于此值不采集，避免垃圾数据）
         public double MinConfidenceForCapture { get; set; } = 0.25;
         
@@ -425,6 +428,7 @@ namespace Audio900.Services
                     {
                         loopCount++;
                         Bitmap liveImage = null;
+                        Bitmap imageForEvent = null; // 事件订阅方的独立副本，交接后由订阅方负责
 
                         try
                         {
@@ -445,10 +449,15 @@ namespace Audio900.Services
                                 continue;
                             }
 
-                            // 2. 应用标定（如果已标定）
+                            // 2. 应用标定（如果已标定），标定返回新 Bitmap 时显式释放原图
                             if (_calibrationService != null && _calibrationService.IsCalibrated(step.CameraIndex))
                             {
-                                liveImage = _calibrationService.ApplyCalibration(liveImage, step.CameraIndex);
+                                var calibrated = _calibrationService.ApplyCalibration(liveImage, step.CameraIndex);
+                                if (!ReferenceEquals(calibrated, liveImage))
+                                {
+                                    liveImage.Dispose();
+                                    liveImage = calibrated;
+                                }
                             }
 
                             _arInferencing = true;
@@ -462,9 +471,11 @@ namespace Audio900.Services
                                 centerPoint = new PointF((float)result.Results["CenterX"], (float)result.Results["CenterY"]);
                             }
 
+                            // 给事件传独立 Clone，订阅方会 BeginInvoke 异步处理，原 liveImage 循环末尾释放不能影响订阅方
+                            imageForEvent = (Bitmap)liveImage.Clone();
                             InOnYoloDetection?.Invoke(this, new InspectionResultEventArgs
                             {
-                                Image = liveImage,
+                                Image = imageForEvent,
                                 Results = result.Results,
                                 IsPassed = result.Passed,
                                 Step = step,
@@ -472,6 +483,7 @@ namespace Audio900.Services
                                 IsInROI = isInROI,
                                 CenterPoint = centerPoint
                             });
+                            imageForEvent = null; // 所有权已转交给订阅方，防止 finally 重复释放
 
                             // 【需求2】AR模式自动数据集导出（isArMode=true 时内部自动过滤NG帧，只存OK帧）
                             TryAutoExportDataset(liveImage, step, result.Passed, result.Predictions, result.Results, isArMode: true);
@@ -505,6 +517,15 @@ namespace Audio900.Services
                                 OnStepCompleted?.Invoke(step);
                                 break;
                             }
+                        }
+                        finally
+                        {
+                            // 每帧强制释放：堵住 liveImage 泄漏的主源头
+                            liveImage?.Dispose();
+                            liveImage = null;
+                            // 异常导致事件未交接成功时的兜底释放
+                            imageForEvent?.Dispose();
+                            imageForEvent = null;
                         }
 
                         await Task.Delay(120); // 降频：70ms -> 120ms，降低推理频率                                             }
@@ -1313,6 +1334,7 @@ namespace Audio900.Services
         /// <summary>
         /// 【需求2】尝试自动导出数据集（预测转标注+OK/NG分类采集）
         /// isArMode=true 表示 AR 过程检测循环调用；isArMode=false 表示标准单次检测调用
+        /// 已改为后台异步执行 + 限流：主路径只做 Clone 和入队，绝不阻塞 AR / 推理线程
         /// </summary>
         private void TryAutoExportDataset(Bitmap image, WorkStep step, bool isPassed, List<YoloOBBPrediction> predictions, Dictionary<string, double> results, bool isArMode = false)
         {
@@ -1327,7 +1349,6 @@ namespace Audio900.Services
                 // 【过滤1】无预测目标的帧不存 —— 空框图片对训练无意义
                 if (predictions == null || predictions.Count == 0)
                 {
-                    _logger.Info($"步骤{step.StepNumber}: 跳过采集（无预测目标）");
                     return;
                 }
 
@@ -1348,30 +1369,66 @@ namespace Audio900.Services
                 double maxConfidence = predictions.Max(p => p.Confidence);
                 if (maxConfidence < MinConfidenceForCapture)
                 {
-                    _logger.Info($"步骤{step.StepNumber}: 跳过采集（最高置信度{maxConfidence:F2} < {MinConfidenceForCapture}）");
                     return;
                 }
 
-                // 调用AutoDatasetExportService导出
-                string exportedPath = _autoDatasetExportService.ExportStepResult(
-                    _currentTemplate,
-                    step,
-                    image,
-                    isPassed,
-                    Params.Instance.SN,
-                    Params.Instance.empNo,
-                    predictions,
-                    results
-                );
-
-                if (!string.IsNullOrEmpty(exportedPath))
+                // 限流闸：拿不到令牌就跳过这一帧，绝不等；否则 AR 每帧都会在这里堆积队列
+                if (!_autoExportSemaphore.Wait(0))
                 {
-                    _logger.Info($"步骤{step.StepNumber}: 自动数据集已导出 → {exportedPath}");
+                    return;
                 }
+
+                // 克隆出独立副本给后台线程，主 Bitmap 由调用方（AR 循环）在 finally 里释放，互不干涉
+                Bitmap snapshot;
+                try
+                {
+                    snapshot = (Bitmap)image.Clone();
+                }
+                catch
+                {
+                    _autoExportSemaphore.Release();
+                    return;
+                }
+
+                var template = _currentTemplate;
+                int stepNumber = step.StepNumber;
+                string sn = Params.Instance.SN;
+                string empNo = Params.Instance.empNo;
+
+                // 后台异步写盘：jpg/txt/json/meta 全部脱离主线程
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        string exportedPath = _autoDatasetExportService.ExportStepResult(
+                            template,
+                            step,
+                            snapshot,
+                            isPassed,
+                            sn,
+                            empNo,
+                            predictions,
+                            results);
+
+                        if (!string.IsNullOrEmpty(exportedPath))
+                        {
+                            _logger.Info($"步骤{stepNumber}: 自动数据集已导出 → {exportedPath}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Error(ex, $"步骤{stepNumber}: 自动数据集导出失败");
+                    }
+                    finally
+                    {
+                        try { snapshot.Dispose(); } catch { }
+                        _autoExportSemaphore.Release();
+                    }
+                });
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, $"步骤{step.StepNumber}: 自动数据集导出失败");
+                _logger.Error(ex, $"步骤{step.StepNumber}: 自动数据集导出入队失败");
             }
         }
 
