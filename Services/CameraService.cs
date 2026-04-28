@@ -185,35 +185,47 @@ namespace Audio900.Services
                     return 0;
                 }
 
+                // 并行初始化所有相机（每个相机的 USB 枚举 + StartView 各自 ~500-1500ms，
+                // 串行 foreach await 会让第二路画面比第一路晚 1 秒以上；并行后整体启动延迟减半）
+                var initTasks = new Task<(int Index, CameraService Camera, bool Ok)>[desiredCameraCount];
                 for (int i = 0; i < desiredCameraCount; i++)
                 {
-                    var camera = new CameraService(i, true);
-
-                    if (previewWindowHandles != null && i < previewWindowHandles.Count)
+                    int idx = i;
+                    initTasks[i] = Task.Run(async () =>
                     {
-                        camera.SetWindowHandle(previewWindowHandles[i]);
-                    }
+                        var cam = new CameraService(idx, true);
 
-                    if (_videoRecordingService != null)
-                    {
-                        camera.SetVideoRecordingService(_videoRecordingService);
-                    }
-
-                    bool success = await camera.InitializeCamera(parentControl);
-
-                    if (success)
-                    {
-                        _cameras.Add(camera);
-
-                        // 保存第一个成功初始化的相机类型到主实例
-                        if (i == 0)
+                        if (previewWindowHandles != null && idx < previewWindowHandles.Count)
                         {
-                            _cameraType = camera._cameraType;
+                            cam.SetWindowHandle(previewWindowHandles[idx]);
+                        }
+                        if (_videoRecordingService != null)
+                        {
+                            cam.SetVideoRecordingService(_videoRecordingService);
+                        }
+
+                        bool ok = await cam.InitializeCamera(parentControl);
+                        return (idx, cam, ok);
+                    });
+                }
+
+                var initResults = await Task.WhenAll(initTasks);
+
+                // 按原顺序处理结果，保持事件订阅的索引一致性
+                foreach (var r in initResults.OrderBy(r => r.Index))
+                {
+                    if (r.Ok)
+                    {
+                        _cameras.Add(r.Camera);
+
+                        if (r.Index == 0)
+                        {
+                            _cameraType = r.Camera._cameraType;
                             _isInitialized = true;
                         }
 
-                        int cameraIndex = i;
-                        camera.ImageCaptured += (s, image) =>
+                        int cameraIndex = r.Index;
+                        r.Camera.ImageCaptured += (s, image) =>
                         {
                             MultiCameraImageCaptured?.Invoke(this, new CameraImageEventArgs
                             {
@@ -222,16 +234,11 @@ namespace Audio900.Services
                             });
                         };
 
-                        LoggerService.Info($"相机 {i} 初始化成功");
+                        LoggerService.Info($"相机 {r.Index} 初始化成功");
                     }
                     else
                     {
-                        LoggerService.Warn($"相机 {i} 初始化失败");
-
-                        if (i == 0)
-                        {
-                            break;
-                        }
+                        LoggerService.Warn($"相机 {r.Index} 初始化失败");
                     }
                 }
 
@@ -821,18 +828,12 @@ namespace Audio900.Services
 
                 if (_isRunning && _latestFrame != null)
                 {
-                    // 等待新图信号，超时 200ms
-                    if (_newFrameSignal.WaitOne(200))
+                    // 直接取最新一帧，不再硬等 200ms 新帧信号；
+                    // 
+                    // 但去掉 WaitOne(200) 能在采集帧率波动时避免每帧多 50~200ms 的累积延迟。
+                    lock (_frameLock)
                     {
-                        lock (_frameLock)
-                        {
-                            return _latestFrame != null ? (Bitmap)_latestFrame.Clone() : null;
-                        }
-                    }
-                    else
-                    {
-                        LoggerService.Warn("单次拍照取的旧图CaptureSnapshotAsync，说明采集线程可能卡死了");
-                        return null;
+                        return _latestFrame != null ? (Bitmap)_latestFrame.Clone() : null;
                     }
                 }
 

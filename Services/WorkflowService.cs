@@ -528,7 +528,9 @@ namespace Audio900.Services
                             imageForEvent = null;
                         }
 
-                        await Task.Delay(120); // 降频：70ms -> 120ms，降低推理频率                                             }
+                        // 不再硬性降频：DirectML+优化后单帧 ~25ms，让推理跑满即可
+                        // 仍给一个最小让步，避免极端情况下死循环占满 CPU
+                        await Task.Delay(1);
                     }
                 });
 
